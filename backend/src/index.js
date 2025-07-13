@@ -13,17 +13,17 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-/* ===== 共通ヘルパ ===== */
+/* ===== 共通ユーティリティ ===== */
+function nowJST() {
+  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 19).replace("T", " ");
+}
 function adjustProductStock(productId, delta, newPrice = null) {
   if (!productId || isNaN(delta)) return;
-
-  /* --- 在庫を加算 --- */
   db.prepare("UPDATE products SET stock = stock + ? WHERE id = ?").run(
     delta,
     productId
   );
-
-  /* --- 価格を更新（指定がある場合のみ） --- */
   if (newPrice !== null && newPrice !== undefined && newPrice !== "") {
     const priceInt = Number(newPrice);
     if (!isNaN(priceInt)) {
@@ -49,7 +49,6 @@ app.post("/api/login", (req, res) => {
 /* ===== 画像アップロード設定 ===== */
 const uploadDir = path.resolve("uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
 const storage = multer.diskStorage({
   destination: uploadDir,
   filename: (req, file, cb) =>
@@ -72,7 +71,6 @@ app.get("/api/members", (_req, res) => {
     res.status(500).json({ error: "メンバー取得に失敗しました" });
   }
 });
-
 app.get("/api/products", (_req, res) => {
   try {
     const products = db.prepare("SELECT * FROM products").all();
@@ -86,23 +84,20 @@ app.get("/api/products", (_req, res) => {
 app.post("/api/purchase", (req, res) => {
   try {
     const { memberId, productIds } = req.body;
-    const now = new Date().toISOString();
+    const ts = nowJST();
 
     const getMember = db.prepare("SELECT name FROM members WHERE id = ?");
     const getProduct = db.prepare("SELECT name FROM products WHERE id = ?");
 
     const memberRow = getMember.get(memberId);
-    if (!memberRow) {
+    if (!memberRow)
       return res.status(400).json({ error: "不正な memberId です" });
-    }
 
     const insertPurchase = db.prepare(`
       INSERT INTO purchases
         (member_id, member_name, product_id, product_name, timestamp)
       VALUES (?, ?, ?, ?, ?)
     `);
-
-    /* ★ 在庫をマイナスにさせない UPDATE 文に変更 ★ */
     const updateStock = db.prepare(`
       UPDATE products
       SET stock = CASE WHEN stock > 0 THEN stock - 1 ELSE 0 END
@@ -112,11 +107,16 @@ app.post("/api/purchase", (req, res) => {
     db.transaction(() => {
       productIds.forEach((pid) => {
         const prodRow = getProduct.get(pid);
-        if (!prodRow) throw new Error(`product_id=${pid} が存在しません`);
-        insertPurchase.run(memberId, memberRow.name, pid, prodRow.name, now);
+        if (!prodRow) throw new Error(`product_id=\${pid} が存在しません`);
+        insertPurchase.run(
+          memberId,
+          memberRow.name,
+          pid,
+          prodRow.name,
+          ts // ← JST で書き込み
+        );
         updateStock.run(pid);
       });
-      /* 念のため全体クランプ */
       db.prepare("UPDATE products SET stock = 0 WHERE stock < 0").run();
     })();
 
@@ -352,7 +352,7 @@ app.delete("/api/admin/:table/:id", (req, res) => {
   }
 });
 
-/* ---- 仕入れ登録エンドポイント ---- */
+/* ---- 仕入れ登録インポート ---- */
 app.post("/api/admin/restock/import", (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: "text が空です" });
@@ -361,18 +361,19 @@ app.post("/api/admin/restock/import", (req, res) => {
   if (items.length === 0)
     return res.status(400).json({ error: "商品が抽出できませんでした" });
 
+  const ts = nowJST();
   const findProduct = db.prepare("SELECT id FROM products WHERE barcode = ?");
   const insertProduct = db.prepare(`
       INSERT INTO products (name, price, stock, barcode)
       VALUES (?, ?, ?, ?)
   `);
-  const updateProduct = db.prepare(
-    "UPDATE products SET price = ?, stock = stock + ? WHERE id = ?"
-  );
+  const updateProduct = db.prepare(`
+      UPDATE products SET price = ?, stock = stock + ? WHERE id = ?
+  `);
   const insertRestock = db.prepare(`
       INSERT INTO restock_history
-        (product_id, product_name, barcode, unit_price, price, quantity, subtotal)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (product_id, product_name, barcode, unit_price, price, quantity, subtotal, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   db.transaction(() => {
@@ -393,7 +394,7 @@ app.post("/api/admin/restock/import", (req, res) => {
         productId = info.lastInsertRowid;
       }
 
-      /* 2. restock_history へ挿入 */
+      /* 2. restock_history へ挿入（JST タイムスタンプ付き） */
       insertRestock.run(
         productId,
         it.product_name,
@@ -401,14 +402,14 @@ app.post("/api/admin/restock/import", (req, res) => {
         it.unit_price,
         it.price,
         it.quantity,
-        it.subtotal
+        it.subtotal,
+        ts // ← JST
       );
     });
   })();
 
   res.json({ ok: true, imported: items.length });
 });
-/* ================================= */
 
 /* サーバ起動 */
 const PORT = process.env.PORT || 3001;

@@ -9,6 +9,13 @@ import {
 
 const BASE = "/api/admin";
 
+/* ★ JST タイムスタンプを返すユーティリティ */
+const jstNow = () => {
+  const dt = new Date();
+  const jst = new Date(dt.getTime() + 9 * 60 * 60 * 1000); // UTC→JST
+  return jst.toISOString().slice(0, 19).replace("T", " "); // 'YYYY-MM-DD HH:mm:ss'
+};
+
 /* 行オブジェクトを編集用に整形 */
 function editableCopy(row) {
   const copy = {};
@@ -85,12 +92,12 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
       return cp;
     });
 
-  /* 🎯 新規行追加（timestamp 自動入力対応） */
+  /* 🎯 新規行追加（timestamp は JST 自動入力） */
   const addRow = () => {
     const blank = {};
     columns.forEach((c) => {
       if (c !== "id") {
-        blank[c] = c === "timestamp" ? new Date().toISOString() : "";
+        blank[c] = c === "timestamp" ? jstNow() : "";
       }
     });
     setNewRows((r) => [...r, { __tempId: Date.now(), ...blank }]);
