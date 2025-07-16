@@ -1,42 +1,45 @@
 // frontend/src/hooks/useSoundEffects.js
 import { useMemo } from "react";
 
-/** ここを書き換えれば簡単にファイル名を差し替えられます（すべて .mp3） */
+/* 🎵 効果音ファイル定義（.mp3 は同階層の public/sounds 内） */
 export const SOUND_FILES = {
   scanSuccess: "/sounds/scan_success.mp3",
-  scanError:   "/sounds/scan_error.mp3",
-  addProduct:  "/sounds/add_product.mp3",
-  confirm:     "/sounds/confirm.mp3",
+  scanError: "/sounds/scan_error.mp3",
+  addProduct: "/sounds/add_product.mp3",
+  confirm: "/sounds/confirm.mp3",
 };
 
-/**
- * 効果音再生フック
- *   const { play } = useSoundEffects();
- *   play("scanSuccess"); // など
- */
-export default function useSoundEffects(override = {}) {
-  /** Audio オブジェクトを一度だけ生成してキャッシュ */
-  const audios = useMemo(() => {
-    const map = { ...SOUND_FILES, ...override };
-    const store = {};
-    for (const [key, src] of Object.entries(map)) {
-      const audio = new Audio(src);
-      audio.preload = "auto";
-      store[key] = audio;
-    }
-    return store;
-  }, [override]);
+/* ──────────────────────────────────────────
+   📀 マスター Audio をモジュールスコープでプリロード
+   ────────────────────────────────────────── */
+const masterAudios = new Map();
+Object.entries(SOUND_FILES).forEach(([key, src]) => {
+  const a = new Audio(src);
+  a.preload = "auto";
+  masterAudios.set(key, a);
+});
 
-  /** 再生ユーティリティ */
+/* ===========================================================
+ *  🔊 効果音再生フック
+ *     const { play } = useSoundEffects();
+ *     play("addProduct");
+ * =========================================================== */
+export default function useSoundEffects(override = {}) {
+  /* 上書き用ソース（メモ化して再レンダと無縁に） */
+  const sources = useMemo(() => ({ ...SOUND_FILES, ...override }), [override]);
+
+  /** 独立インスタンスを生成して再生するユーティリティ */
   const play = (key) => {
-    const a = audios[key];
-    if (!a) return;
-    try {
-      a.currentTime = 0;
-      a.play();
-    } catch {
-      /* 自動再生ブロックなどで失敗する場合は黙って無視 */
-    }
+    const src = sources[key];
+    if (!src) return;
+
+    /* cloneNode() で高速複製 → 完全に独立した Audio になる */
+    const base = masterAudios.get(key) ?? new Audio(src);
+    const a = /** @type {HTMLAudioElement} */ (base.cloneNode());
+    a.currentTime = 0;
+
+    /* Safari 自動再生ブロック対策で Promise を握りつぶす */
+    a.play().catch(() => {});
   };
 
   return { play };
