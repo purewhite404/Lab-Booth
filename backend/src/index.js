@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import adminAuth from "./adminAuth.js";
 import parseOrderItems from "./parseOrderItems.js";
+import sharp from "sharp";
 
 dotenv.config();
 const app = express();
@@ -131,7 +132,7 @@ app.post("/api/purchase", (req, res) => {
 });
 
 /* ----- 画像アップロード API ----- */
-app.post("/api/products/:id/image", upload.single("image"), (req, res) => {
+app.post("/api/products/:id/image", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "画像がありません" });
     const id = Number(req.params.id);
@@ -148,8 +149,21 @@ app.post("/api/products/:id/image", upload.single("image"), (req, res) => {
       }
     }
 
-    /* 新しい画像を保存 */
-    const publicPath = `/api/uploads/${req.file.filename}`;
+    // 保存先ファイル名
+    const filename = `product_${id}_${Date.now()}.jpg`;
+    const outPath = path.join(uploadDir, filename);
+
+    // sharpでリサイズ・圧縮して保存
+    await sharp(req.file.path)
+      .resize({ width: 600, height: 600, fit: "inside" })
+      .jpeg({ quality: 70 })
+      .toFile(outPath);
+
+    // アップロードされた元ファイルを削除
+    fs.unlinkSync(req.file.path);
+
+    /* DB更新 */
+    const publicPath = `/api/uploads/${filename}`;
     db.prepare("UPDATE products SET image = ? WHERE id = ?").run(
       publicPath,
       id
