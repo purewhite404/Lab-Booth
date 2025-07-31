@@ -124,7 +124,7 @@ export default function App() {
 
   /* ---------- 画面描画 ---------- */
   return (
-    <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col gap-12 pb-24">
+    <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col gap-12 h-full">
       {/* タイトル中央・ログインボタン右寄せ */}
       <div className="relative flex items-center mt-6 mb-2 min-h-[3.5rem]">
         <h1
