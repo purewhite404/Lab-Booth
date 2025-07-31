@@ -72,8 +72,8 @@ export default function Admin() {
         {/* ✅ 右端に寄る確定ボタン */}
         <button
           onClick={() => ref.current?.commit()}
-          className="ml-auto px-6 py-2 rounded-xl bg-emerald-600
-                     hover:bg-emerald-500 font-bold shadow-lg"
+          className="px-6 py-2 rounded-xl bg-emerald-600
+                     hover:bg-emerald-500 font-bold shadow-lg transition"
           disabled={!tab || currentType === "invoice"}
         >
           ✅ 確定
