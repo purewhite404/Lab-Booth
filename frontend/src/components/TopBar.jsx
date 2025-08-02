@@ -60,6 +60,11 @@ export default function TopBar() {
                 type={show ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleLogin();
+                  }
+                }}
                 className="w-full px-4 py-2 pr-10 rounded-lg bg-gray-900
                            border border-gray-600 focus:outline-none"
                 placeholder="パスワード"
