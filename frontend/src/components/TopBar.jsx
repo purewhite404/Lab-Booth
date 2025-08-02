@@ -36,7 +36,18 @@ export default function TopBar() {
   return (
     <>
       {/* 右上のログイン / ログアウト ボタン */}
-      <div className="w-full flex justify-end py-4">
+      <div className="w-full flex justify-end gap-x-4 py-4">
+        {/* /admin へのリンク（ログイン時のみ表示） */}
+        {isLoggedIn && (
+          <a
+            href="/admin"
+            className="px-4 py-2 rounded-xl bg-gray-800/70 backdrop-blur
+                      border border-gray-600 hover:bg-gray-700 font-bold"
+          >
+            🛠️ 管理ページ
+          </a>
+        )}
+
         <button
           onClick={handleButtonClick}
           className="px-4 py-2 rounded-xl bg-gray-800/70 backdrop-blur
