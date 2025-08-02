@@ -71,7 +71,9 @@ export default function TopBar() {
                            text-gray-400 hover:text-gray-200"
                 aria-label="パスワード表示切替"
               >
-                {show ? "🙈" : "👁️"}
+                <span className="material-symbols-outlined">
+                  {show ? "visibility_off" : "visibility"}
+                </span>
               </button>
             </div>
 
