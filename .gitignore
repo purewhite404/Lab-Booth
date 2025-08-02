@@ -20,3 +20,6 @@ node_modules/
 
 # VSCode 拡張設定以外は無視
 !.vscode/extensions.json
+
+# ジャンル分類ルール
+frontend/src/assets/genreRules.json
