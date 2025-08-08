@@ -5,6 +5,7 @@ import TopBar from "../components/TopBar";
 import AdminTable from "../components/AdminTable";
 import RestockForm from "../components/RestockForm";
 import InvoiceGenerator from "../components/InvoiceGenerator";
+import RestockSuggestions from "../components/RestockSuggestions";
 
 export default function Admin() {
   const { token, isLoggedIn } = useContext(AuthContext);
@@ -28,6 +29,7 @@ export default function Admin() {
     { key: "products", label: "商品一覧", type: "table" },
     { key: "purchases", label: "購入履歴", type: "table" },
     { key: "restock_history", label: "仕入れ履歴", type: "table" },
+    { key: "restock_suggestions", label: "仕入れ候補", type: "suggest" },
     { key: "restock_import", label: "仕入れ登録", type: "import" },
     { key: "invoice", label: "請求書作成", type: "invoice" },
   ];
@@ -46,6 +48,8 @@ export default function Admin() {
       return <RestockForm ref={ref} token={token} key="import" />;
     if (cur.type === "invoice")
       return <InvoiceGenerator token={token} key="inv" />;
+    if (cur.type === "suggest")
+      return <RestockSuggestions token={token} key="sug" />;
   };
 
   const currentType = tabs.find((t) => t.key === tab)?.type;
@@ -74,7 +78,7 @@ export default function Admin() {
           onClick={() => ref.current?.commit()}
           className="ml-auto px-6 py-2 rounded-xl bg-emerald-600
                      hover:bg-emerald-500 font-bold shadow-lg"
-          disabled={!tab || currentType === "invoice"}
+          disabled={!tab || currentType === "invoice" || currentType === "suggest"}
         >
           ✅ 確定
         </button>
