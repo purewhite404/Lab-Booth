@@ -206,7 +206,7 @@ app.get("/api/admin/restock-suggestions", (req, res) => {
     const targetDays = Number(req.query.targetDays ?? 14); // 何日分を確保するか
     const safetyDays = Number(req.query.safetyDays ?? 3); // 安全在庫(日)
     const minSold = Number(req.query.minSold ?? 1); // 候補に含める最低販売数
-    const includeZeroVelocityWhenOOS = String(req.query.includeOOS ?? "true") === "true"; // 在庫ゼロは販売実績なくても含める
+    const includeZeroVelocityWhenOOS = String(req.query.includeOOS ?? "false") === "true"; // 在庫ゼロは販売実績なくても含める
 
     const since7 = jstMinusDays(days7);
     const sinceN = jstMinusDays(days);
@@ -236,9 +236,12 @@ app.get("/api/admin/restock-suggestions", (req, res) => {
       .map((r) => {
         const sold7 = Number(r.sold_7d || 0);
         const soldN = Number(r.sold_nd || 0);
-        const velocity = soldN / Math.max(days, 1); // 1日あたり
+        const avg7d = sold7 / days7;      // 直近7日間の1日あたり販売数
+        const avgNd = soldN / Math.max(days, 1);       // 直近N日間の1日あたり販売数
+        const isTrending = avg7d > avgNd;
         const stock = Number(r.stock || 0);
         const isOOS = stock <= 0;
+        const velocity = isTrending ? avg7d : avgNd; // 1日あたり
         const daysOfSupply = velocity > 0 ? stock / velocity : (isOOS ? 0 : 9999);
         // 推奨数量 = (ターゲット日数 + 安全在庫日数) * 速度 - 現在庫
         const targetQtyFloat = velocity * (targetDays + safetyDays) - stock;
@@ -247,17 +250,12 @@ app.get("/api/admin/restock-suggestions", (req, res) => {
           // 実績ゼロだが在庫ゼロのものは最小1個提案
           suggestedQty = Math.max(suggestedQty, 1);
         }
-        // 優先度スコア（小さいほど優先）
-        const priority = (
-          (isOOS ? -1000 : 0) + // 在庫切れを強く優先
-          (velocity > 0 ? daysOfSupply : 9999) // 供給日数が少ないほど優先
-        );
 
         // 理由
         let reason = "";
         if (isOOS) reason = "在庫切れ";
         else if (velocity > 0 && daysOfSupply < targetDays) reason = `在庫が${Math.ceil(daysOfSupply)}日分しかない`;
-        else if (sold7 >= Math.ceil(days7 / 2)) reason = "最近よく売れている"; // ざっくり基準
+        else if (isTrending) reason = "最近よく売れている";
 
         return {
           id: r.id,
@@ -273,16 +271,16 @@ app.get("/api/admin/restock-suggestions", (req, res) => {
           last_sold_at: r.last_sold_at,
           suggested_qty: suggestedQty,
           reason,
-          priority,
         };
       })
       .filter((r) => {
         // フィルタ：販売数が一定以上、または在庫切れ（設定による）
+        if (r.suggested_qty <= 0) return false;
         if (r.sold_nd >= minSold) return true;
         if (includeZeroVelocityWhenOOS && r.stock <= 0) return true;
         return false;
       })
-      .sort((a, b) => a.priority - b.priority)
+      .sort((a, b) => b.suggested_qty - a.suggested_qty)
       .slice(0, limit);
 
     res.json({ suggestions, meta: { days, targetDays, safetyDays, minSold, limit } });

@@ -5,7 +5,7 @@ export default function RestockSuggestions({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [items, setItems] = useState([]);
-  const [params, setParams] = useState({ days: 30, targetDays: 14, safetyDays: 3, minSold: 1 });
+  const [params, setParams] = useState({ days: 45, targetDays: 30, safetyDays: 10, minSold: 1 });
 
   const fetchSuggestions = async () => {
     try {
