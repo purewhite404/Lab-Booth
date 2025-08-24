@@ -67,7 +67,8 @@ export default function InvoiceGenerator({ token }) {
 
   /* === CSV ダウンロード === */
   const downloadCSV = () => {
-    const [y, m] = ym.split("-");
+    const [y, mStr] = ym.split("-");
+    const m = parseInt(mStr, 10);  // remove leading zero
     const head = [
       "名前",
       "繰り越し",
@@ -101,8 +102,9 @@ export default function InvoiceGenerator({ token }) {
 
   /* === PDF / 印刷 === */
   const printInvoice = () => {
-    const [y, m] = ym.split("-");
-    const today = new Date();
+  const [y, mStr] = ym.split("-");
+  const m = parseInt(mStr, 10);  // strip leading zero
+  const today = new Date();
     const todayStr = `${today.getFullYear()}/${
       today.getMonth() + 1
     }/${today.getDate()}`;
@@ -226,7 +228,8 @@ export default function InvoiceGenerator({ token }) {
   };
 
   /* === 画面側テーブル (略) === */
-  const [, m] = ym.split("-");
+  const [, mStr] = ym.split("-");
+  const m = parseInt(mStr, 10);  // strip leading zero for display
   return (
     <div className="flex flex-col gap-6">
       {/* 入力欄 & ボタン */}
