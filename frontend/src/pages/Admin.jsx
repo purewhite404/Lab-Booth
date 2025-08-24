@@ -34,6 +34,10 @@ export default function Admin() {
     { key: "invoice", label: "請求書作成", type: "invoice" },
   ];
 
+  // 現在のタブ情報を一度だけ算出
+  const currentTab = tabs.find((t) => t.key === tab);
+  const currentType = currentTab?.type;
+
   /* ----- タブごとの中身 ----- */
   const renderBody = () => {
     if (!tab)
@@ -41,22 +45,19 @@ export default function Admin() {
         <p className="text-gray-400">上のボタンで機能を選択してください 😊</p>
       );
 
-    const cur = tabs.find((t) => t.key === tab);
-    if (cur.type === "table")
+    if (currentType === "table")
       return <AdminTable ref={ref} table={tab} token={token} key={tab} />;
-    if (cur.type === "import")
+    if (currentType === "import")
       return <RestockForm ref={ref} token={token} key="import" />;
-    if (cur.type === "invoice")
+    if (currentType === "invoice")
       return <InvoiceGenerator token={token} key="inv" />;
-    if (cur.type === "suggest")
+    if (currentType === "suggest")
       return <RestockSuggestions token={token} key="sug" />;
   };
 
-  const currentType = tabs.find((t) => t.key === tab)?.type;
-
   /* ----- 画面 ----- */
   return (
-    <div className="min-h-screen bg-black text-gray-100 font-sans px-6 py-6">
+    <div className="h-screen overflow-hidden flex flex-col bg-black text-gray-100 font-sans px-6 py-6">
       <TopBar />
 
       <header className="flex flex-wrap items-center gap-4 mb-8">
@@ -84,7 +85,9 @@ export default function Admin() {
         </button>
       </header>
 
-      {renderBody()}
+      <div className="flex-1 overflow-hidden">
+        {renderBody()}
+      </div>
     </div>
   );
 }
