@@ -15,10 +15,13 @@ export default function TopBar() {
   const handleLogin = useCallback(async () => {
     try {
       await login(password);
-      alert("🙌 ログインしました！");
       setIsModalOpen(false);
       setPassword("");
       setError("");
+      // ✅ ログイン後に /admin へ遷移
+      if (!window.location.pathname.startsWith("/admin")) {
+        window.location.href = "/admin";
+      }
     } catch {
       setError("❌ パスワードが違います");
     }
@@ -28,6 +31,10 @@ export default function TopBar() {
   const handleButtonClick = () => {
     if (isLoggedIn) {
       logout();
+      // 🔁 /admin にいる状態でログアウトしたらホームへ戻す
+      if (window.location.pathname.startsWith("/admin")) {
+        window.location.href = "/";
+      }
       return;
     }
     setIsModalOpen(true);
