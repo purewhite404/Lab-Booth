@@ -1,5 +1,5 @@
 // frontend/src/App.jsx
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchMembers, fetchProducts, postPurchase } from "./api";
 import NameSelector from "./components/NameSelector";
 import ProductList from "./components/ProductList";
@@ -18,6 +18,14 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [isLoading, setLoading] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   /* 🎵 効果音フック */
   const { play } = useSoundEffects();
@@ -99,7 +107,9 @@ export default function App() {
       console.error(err);
       setToast({ msg: "購入処理に失敗しました😢", type: "error" });
     } finally {
-      setIsConfirming(false);
+      if (isMounted.current) {
+        setIsConfirming(false);
+      }
     }
   };
 
