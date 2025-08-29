@@ -38,6 +38,18 @@ export default function NameSelector({
                      shadow-glass border border-gray-700 z-40
                      grid grid-cols-2 sm:grid-cols-4 gap-2 p-3"
         >
+          {/* クリア（未選択に戻す） */}
+          <li
+            className="col-span-full px-6 py-2 cursor-pointer text-base
+                       text-red-300 hover:text-red-200 hover:bg-gray-700/60"
+            onClick={() => {
+              setCurrentMember(null);
+              setOpen(false);
+            }}
+          >
+            ⨯ 未選択に戻す
+          </li>
+
           {members.map((m) => (
             <li
               key={m.id}
