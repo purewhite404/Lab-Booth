@@ -26,7 +26,7 @@ function editableCopy(row) {
 const AdminTable = forwardRef(({ table, token }, ref) => {
   const [columns, setColumns] = useState([]);
   const [rows, setRows] = useState([]);
-  const [order, setOrder] = useState("asc");
+  const [order, setOrder] = useState("desc");
   const [dirty, setDirty] = useState({});
   const [deleted, setDeleted] = useState(new Set());
   const [newRows, setNewRows] = useState([]);
