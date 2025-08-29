@@ -14,6 +14,23 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+/* ===== 多重送信（短時間の同一データ）対策 ===== */
+const DUP_WINDOW_MS = Number(process.env.DEDUP_WINDOW_MS || 5000); // 既定5秒
+const recentPurchaseKeys = new Map(); // key -> timestamp(ms)
+function makePurchaseKey(memberId, productIds) {
+  const ids = Array.isArray(productIds)
+    ? [...productIds].map((n) => Number(n)).sort((a, b) => a - b)
+    : [];
+  return `${memberId}|${ids.join(",")}`;
+}
+// 簡易クリーンアップ（リーク防止）
+setInterval(() => {
+  const cutoff = Date.now() - DUP_WINDOW_MS;
+  for (const [k, ts] of recentPurchaseKeys) {
+    if (ts < cutoff) recentPurchaseKeys.delete(k);
+  }
+}, Math.max(DUP_WINDOW_MS, 2000)).unref?.();
+
 /* ===== 共通ユーティリティ ===== */
 function nowJST() {
   const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
@@ -83,6 +100,7 @@ app.get("/api/products", (_req, res) => {
 
 /* ⭐ 購入確定エンドポイント ⭐ */
 app.post("/api/purchase", (req, res) => {
+  let dedupKey;
   try {
     const { memberId, productIds } = req.body;
     const ts = nowJST();
@@ -93,6 +111,28 @@ app.post("/api/purchase", (req, res) => {
     const memberRow = getMember.get(memberId);
     if (!memberRow)
       return res.status(400).json({ error: "不正な memberId です" });
+
+    // 事前に productIds の妥当性を軽く検証（存在チェック）
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({ error: "productIds が不正です" });
+    }
+    for (const pid of productIds) {
+      const prodRow = getProduct.get(pid);
+      if (!prodRow)
+        return res.status(400).json({ error: "不正な productId が含まれています" });
+    }
+
+    // 短時間の同一内容をブロック（id 昇順でキー化）
+    dedupKey = makePurchaseKey(memberId, productIds);
+    const now = Date.now();
+    const last = recentPurchaseKeys.get(dedupKey);
+    if (last && now - last < DUP_WINDOW_MS) {
+      return res
+        .status(409)
+        .json({ error: "同一内容の購入リクエストが短時間に連続しています" });
+    }
+    // 競合防止のため先に記録（失敗時は catch で解除）
+    recentPurchaseKeys.set(dedupKey, now);
 
     const insertPurchase = db.prepare(`
       INSERT INTO purchases
@@ -108,7 +148,6 @@ app.post("/api/purchase", (req, res) => {
     db.transaction(() => {
       productIds.forEach((pid) => {
         const prodRow = getProduct.get(pid);
-        if (!prodRow) throw new Error(`product_id=\${pid} が存在しません`);
         insertPurchase.run(
           memberId,
           memberRow.name,
@@ -127,6 +166,7 @@ app.post("/api/purchase", (req, res) => {
     });
   } catch (e) {
     console.error(e);
+    if (dedupKey) recentPurchaseKeys.delete(dedupKey); // 失敗時は解放して再試行可に
     res.status(500).json({ error: "購入処理に失敗しました" });
   }
 });
