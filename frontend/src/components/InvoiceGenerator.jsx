@@ -76,18 +76,6 @@ export default function InvoiceGenerator({ token }) {
     };
 
     const lines = text.split(/\r?\n/).filter((l, i, arr) => !(i === arr.length - 1 && l === ""));
-    // 1セルのみの貼り付け
-    if (lines.length === 1) {
-      const firstCell = lines[0].split("\t")[0];
-      const v = normalizeNumber(firstCell);
-      setRows((rs) => {
-        const cp = [...rs];
-        if (cp[startIdx]) cp[startIdx].adjust = v;
-        return cp;
-      });
-      return;
-    }
-
     // 複数行の貼り付け（1列目のみを使用）
     setRows((rs) => {
       const cp = [...rs];
