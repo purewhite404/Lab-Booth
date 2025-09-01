@@ -33,7 +33,7 @@ export default function InvoiceGenerator({ token }) {
           return {
             id: m.id,
             name: m.name,
-            // 調整(±): 繰り越しはマイナス、前払いはプラス
+            // 調整(±): 繰り越しはプラス、前払いはマイナス
             adjust: "",
             settlement: s ? s.settlement : 0,
           };
@@ -94,7 +94,7 @@ export default function InvoiceGenerator({ token }) {
       rows.map((r) => {
         // 調整(±) + 清算分で当月請求額を算出
         // 調整が負なら繰り越し、正なら前払いとして機能する
-        const bal = toNum(r.adjust) + r.settlement;
+        const bal = - toNum(r.adjust) + r.settlement;
         return {
           ...r,
           invoice: bal < 0 ? 0 : bal,
@@ -217,8 +217,9 @@ export default function InvoiceGenerator({ token }) {
           <thead>
             <tr>
               <th>名前</th>
-              <th>繰越/前払い(±)</th>
+              <th>繰越</th>
               <th class="settlement">${m}月清算分</th>
+              <th>前払い</th>
               <th class="invoice">${m}月請求額</th>
               <th>次回前払い</th>
             </tr>
@@ -229,8 +230,9 @@ export default function InvoiceGenerator({ token }) {
                 (r) => `
               <tr>
                 <td>${r.name}</td>
-                <td>${r.adjust || 0}</td>
+                <td>${(Number(r.adjust) < 0 ? Math.abs(Number(r.adjust)) : 0)}</td>
                 <td class="settlement">${r.settlement}</td>
+                <td>${(Number(r.adjust) > 0 ? Number(r.adjust) : 0)}</td>
                 <td class="invoice">${r.invoice}</td>
                 <td>${r.nextAdvance}</td>
               </tr>`
