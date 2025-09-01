@@ -8,7 +8,7 @@ export default function InvoiceGenerator({ token }) {
   /* === 対象年月 === */
   const now = new Date();
   const [ym, setYm] = useState(
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    `${now.getFullYear()}-${String(now.getMonth()).padStart(2, "0")}`
   );
 
   /* === メンバー・清算額取得 === */
