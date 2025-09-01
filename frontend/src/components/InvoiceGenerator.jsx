@@ -50,6 +50,55 @@ export default function InvoiceGenerator({ token }) {
       return cp;
     });
 
+  // Excel列のペースト対応（繰越/前払い(±) 列）
+  const handlePasteAdjust = (startIdx, e) => {
+    const text = e.clipboardData?.getData("text");
+    if (!text) return;
+    e.preventDefault();
+
+    // 全角→半角、通貨やカンマ除去、()でのマイナス対応
+    const toHalfWidth = (str) =>
+      str.replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/　/g, " ");
+    const normalizeNumber = (s) => {
+      if (s == null) return "";
+      let t = toHalfWidth(String(s)).trim();
+      if (!t) return "";
+      // 先頭の Unicode マイナス風文字や ▲/△ を ASCII マイナスへ
+      t = t.replace(/^[−‐‑‒–—―－ー]/, "-");
+      // 通貨記号・カンマ・空白除去
+      t = t.replace(/[¥$,\s]/g, "").replace(/[円]/g, "");
+      // 先頭に+があれば消す
+      t = t.replace(/^\+/, "");
+      // 数値として解釈
+      const num = Number(t);
+      if (Number.isNaN(num)) return "";
+      return String(num);
+    };
+
+    const lines = text.split(/\r?\n/).filter((l, i, arr) => !(i === arr.length - 1 && l === ""));
+    // 1セルのみの貼り付け
+    if (lines.length === 1) {
+      const firstCell = lines[0].split("\t")[0];
+      const v = normalizeNumber(firstCell);
+      setRows((rs) => {
+        const cp = [...rs];
+        if (cp[startIdx]) cp[startIdx].adjust = v;
+        return cp;
+      });
+      return;
+    }
+
+    // 複数行の貼り付け（1列目のみを使用）
+    setRows((rs) => {
+      const cp = [...rs];
+      for (let i = 0; i < lines.length && startIdx + i < cp.length; i++) {
+        const cell = lines[i].split("\t")[0];
+        cp[startIdx + i].adjust = normalizeNumber(cell);
+      }
+      return cp;
+    });
+  };
+
   /* === 計算 === */
   const toNum = (v) => (isNaN(Number(v)) ? 0 : Number(v));
   const computedRows = useMemo(
@@ -276,6 +325,7 @@ export default function InvoiceGenerator({ token }) {
                     type="text"
                     value={r.adjust}
                     onChange={(e) => handleChange(idx, "adjust", e.target.value)}
+                    onPaste={(e) => handlePasteAdjust(idx, e)}
                     className="w-full min-w-[4rem] bg-transparent border-b border-gray-600 text-right"
                     placeholder=""
                   />
