@@ -33,9 +33,9 @@ export default function InvoiceGenerator({ token }) {
           return {
             id: m.id,
             name: m.name,
-            carry: "",
+            // 調整(±): 繰り越しはマイナス、前払いはプラス
+            adjust: "",
             settlement: s ? s.settlement : 0,
-            advance: "",
           };
         })
       );
@@ -55,7 +55,9 @@ export default function InvoiceGenerator({ token }) {
   const computedRows = useMemo(
     () =>
       rows.map((r) => {
-        const bal = toNum(r.carry) + r.settlement - toNum(r.advance);
+        // 調整(±) + 清算分で当月請求額を算出
+        // 調整が負なら繰り越し、正なら前払いとして機能する
+        const bal = toNum(r.adjust) + r.settlement;
         return {
           ...r,
           invoice: bal < 0 ? 0 : bal,
@@ -71,9 +73,8 @@ export default function InvoiceGenerator({ token }) {
     const m = parseInt(mStr, 10);  // remove leading zero
     const head = [
       "名前",
-      "繰り越し",
+      "繰越/前払い(±)",
       `${m}月清算分`,
-      "前払い",
       `${m}月請求額`,
       "次回前払い",
     ];
@@ -81,9 +82,8 @@ export default function InvoiceGenerator({ token }) {
       .map((r) =>
         [
           r.name,
-          r.carry || 0,
+          r.adjust || 0,
           r.settlement,
-          r.advance || 0,
           r.invoice,
           r.nextAdvance,
         ].join(",")
@@ -180,9 +180,8 @@ export default function InvoiceGenerator({ token }) {
           <thead>
             <tr>
               <th>名前</th>
-              <th>繰り越し</th>
+              <th>繰越/前払い(±)</th>
               <th class="settlement">${m}月清算分</th>
-              <th>前払い</th>
               <th class="invoice">${m}月請求額</th>
               <th>次回前払い</th>
             </tr>
@@ -193,9 +192,8 @@ export default function InvoiceGenerator({ token }) {
                 (r) => `
               <tr>
                 <td>${r.name}</td>
-                <td>${r.carry || 0}</td>
+                <td>${r.adjust || 0}</td>
                 <td class="settlement">${r.settlement}</td>
-                <td>${r.advance || 0}</td>
                 <td class="invoice">${r.invoice}</td>
                 <td>${r.nextAdvance}</td>
               </tr>`
@@ -263,9 +261,8 @@ export default function InvoiceGenerator({ token }) {
           <thead className="sticky top-0 bg-gray-800">
             <tr>
               <th className="px-3 py-2 text-left">名前</th>
-              <th className="px-3 py-2">繰り越し</th>
+              <th className="px-3 py-2">繰越/前払い(±)</th>
               <th className="px-3 py-2">{m}月清算分</th>
-              <th className="px-3 py-2">前払い</th>
               <th className="px-3 py-2">{m}月請求額</th>
               <th className="px-3 py-2">次回前払い</th>
             </tr>
@@ -277,25 +274,14 @@ export default function InvoiceGenerator({ token }) {
                 <td className="px-3 py-1">
                   <input
                     type="text"
-                    value={r.carry}
-                    onChange={(e) => handleChange(idx, "carry", e.target.value)}
+                    value={r.adjust}
+                    onChange={(e) => handleChange(idx, "adjust", e.target.value)}
                     className="w-full min-w-[4rem] bg-transparent border-b border-gray-600 text-right"
-                    placeholder="0"
+                    placeholder=""
                   />
                 </td>
                 <td className="px-3 py-1 text-right font-bold">
                   {r.settlement}
-                </td>
-                <td className="px-3 py-1">
-                  <input
-                    type="text"
-                    value={r.advance}
-                    onChange={(e) =>
-                      handleChange(idx, "advance", e.target.value)
-                    }
-                    className="w-full min-w-[4rem] bg-transparent border-b border-gray-600 text-right"
-                    placeholder="0"
-                  />
                 </td>
                 <td className="px-3 py-1 text-right font-bold bg-orange-600/20">
                   {r.invoice}
