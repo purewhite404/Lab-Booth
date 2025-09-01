@@ -10,7 +10,7 @@ Lab Booth は **React + Vite + Tailwind CSS** 製のフロントエンドと **E
 ## 🚀 前提条件
 
 - Docker / Docker Compose 🐳
-- ポート `3000`（フロント）・`3001`（バックエンド）を使用可能であること
+- ポート `3000`（フロント, 開発時は`5173`）・`3001`（バックエンド）を使用可能であること
 
 
 ## ⚙️ クイックスタート
@@ -32,13 +32,20 @@ Lab Booth は **React + Vite + Tailwind CSS** 製のフロントエンドと **E
 3. **コンテナ起動**
 
    ```bash
-   docker-compose up --build
+   docker-compose up -d --build
+   ```
+
+   開発時は
+   ```bash
+   docker compose --profile development up --build
    ```
 
 4. **アクセス**
 
    * フロントエンド: [http://localhost:3000](http://localhost:3000)
+      * 開発時は: [http://localhost:5173](http://localhost:5173)
    * 管理画面: [http://localhost:3000/admin](http://localhost:3000/admin)
+      * 開発時は: [http://localhost:5173/admin](http://localhost:5173/admin)
 
 
 ## 🖼️ 商品画像のアップロード
@@ -61,19 +68,10 @@ script/resize-images.js
 管理画面 `/admin` から次のことが可能です：
 
 * 月ごとの清算データをもとに**請求額を自動計算**
-* 任意の「繰越」「前払い」を入力
+* 任意の「繰越/前払い」を入力
 * **CSV ダウンロード / PDF 印刷機能付き**
 
 💡 **ファイル名は自動で `invoice_2025_07.csv` のように生成されます**
-
-
-## 🛠️ 開発モードでの起動（ホットリロード対応）
-
-```bash
-npm run dev
-```
-
-* `frontend/` と `backend/` を同時にホットリロードで開発可能
 
 
 ## 📁 ディレクトリ構成
@@ -110,5 +108,3 @@ lab-booth/
 ## 🤝 コントリビュート
 
 バグ報告や改善提案は Issue または Pull Request にて歓迎します！
-
-
