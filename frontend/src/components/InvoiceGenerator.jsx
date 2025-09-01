@@ -63,7 +63,7 @@ export default function InvoiceGenerator({ token }) {
       if (s == null) return "";
       let t = toHalfWidth(String(s)).trim();
       if (!t) return "";
-      // 先頭の Unicode マイナス風文字や ▲/△ を ASCII マイナスへ
+      // 先頭の Unicode マイナス風文字を ASCII マイナスへ
       t = t.replace(/^[−‐‑‒–—―－ー]/, "-");
       // 通貨記号・カンマ・空白除去
       t = t.replace(/[¥$,\s]/g, "").replace(/[円]/g, "");
