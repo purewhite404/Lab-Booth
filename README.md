@@ -32,7 +32,7 @@ Lab Booth は **React + Vite + Tailwind CSS** 製のフロントエンドと **E
 3. **コンテナ起動**
 
    ```bash
-   docker-compose up -d --build
+   docker-compose --profile production up -d --build
    ```
 
    開発時は
