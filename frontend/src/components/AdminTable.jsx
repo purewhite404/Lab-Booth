@@ -55,7 +55,7 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
       setDeleted(new Set());
       setNewRows([]);
       /* 列が空なら schema から取得 */
-    if (fetchedRows.length) setColumns(Object.keys(fetchedRows[0]));
+      if (fetchedRows.length) setColumns(Object.keys(fetchedRows[0]));
       else await fetchColumns();
     },
     [table, order, token, fetchColumns]
