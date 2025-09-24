@@ -34,7 +34,7 @@ export default function Admin() {
     { key: "invoice", label: "請求書作成", type: "invoice" },
   ];
 
-  // 現在のタブ情報を一度だけ算出
+  // 現在のタブ情報を取得
   const currentTab = tabs.find((t) => t.key === tab);
   const currentType = currentTab?.type;
 
