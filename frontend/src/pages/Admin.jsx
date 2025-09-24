@@ -57,7 +57,7 @@ export default function Admin() {
 
   /* ----- 画面 ----- */
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-black text-gray-100 font-sans px-6 py-6">
+    <div className="h-screen flex flex-col bg-black text-gray-100 font-sans px-6 py-6">
       <TopBar />
 
       <header className="flex flex-wrap items-center gap-4 mb-8">
@@ -85,7 +85,7 @@ export default function Admin() {
         </button>
       </header>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-auto">
         {renderBody()}
       </div>
     </div>

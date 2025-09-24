@@ -38,24 +38,24 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
     const res = await fetch(`${BASE}/${table}/columns`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-  const { columns: fetchedColumns } = await res.json();
-  setColumns(fetchedColumns);
+    const { columns: fetchedColumns } = await res.json();
+    setColumns(fetchedColumns);
   }, [table, token]);
 
   /* データ取得 */
   const fetchRows = useCallback(
     async (ord = order) => {
       if (!table) return;
-  const res = await fetch(`${BASE}/${table}?order=${ord}`, {
+      const res = await fetch(`${BASE}/${table}?order=${ord}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-  const { rows: fetchedRows } = await res.json();
-  setRows(fetchedRows.map(editableCopy));
+      const { rows: fetchedRows } = await res.json();
+      setRows(fetchedRows.map(editableCopy));
       setDirty({});
       setDeleted(new Set());
       setNewRows([]);
       /* 列が空なら schema から取得 */
-  if (fetchedRows.length) setColumns(Object.keys(fetchedRows[0]));
+    if (fetchedRows.length) setColumns(Object.keys(fetchedRows[0]));
       else await fetchColumns();
     },
     [table, order, token, fetchColumns]
@@ -200,7 +200,7 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
         </thead>
         <tbody>
           {/* 既存行 */}
-      {rows.map((row, idx) => {
+          {rows.map((row, idx) => {
             const isDeleted = deleted.has(row.id);
             return (
               <tr
@@ -213,7 +213,7 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
                     : ""
                 }
               >
-        {renderCells(row, idx, false)}
+              {renderCells(row, idx, false)}
                 <td className="px-3 py-1 text-center">
                   <button
                     onClick={() => toggleDelete(row.id)}
@@ -227,9 +227,9 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
           })}
 
           {/* 新規行 */}
-      {newRows.map((row, idx) => (
+          {newRows.map((row, idx) => (
             <tr key={row.__tempId} className="bg-emerald-900/30">
-      {renderCells(row, idx, true)}
+              {renderCells(row, idx, true)}
               <td />
             </tr>
           ))}
