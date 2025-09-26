@@ -38,7 +38,7 @@ export default function ProductCard({ product, onAdd, onImageUpload }) {
   /* ---------- 描画 ---------- */
   return (
     <div
-      className="group relative overflow-hidden rounded-3xl
+      className="group relative rounded-3xl
                  bg-gray-800/50 backdrop-blur-md shadow-glass
                  p-4 flex flex-col gap-3 hover:scale-[1.03] transition"
     >
