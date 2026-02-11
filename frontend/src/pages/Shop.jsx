@@ -1,136 +1,49 @@
 // frontend/src/pages/Shop.jsx
-import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchMembers, fetchProducts, postPurchase } from "../api/shopApi";
+import useCart from "../hooks/useCart";
+import useProducts from "../hooks/useProducts";
 import NameSelector from "../components/features/shop/NameSelector";
 import ProductList from "../components/features/shop/ProductList";
 import CartList from "../components/features/shop/CartList";
 import Toast from "../components/ui/Toast";
-import useBarcodeScanner from "../hooks/useBarcodeScanner";
-import useSoundEffects from "../hooks/useSoundEffects";
 import TopBar from "../components/features/layout/TopBar";
 
 export default function Shop() {
-  /* ---------- 状態 ---------- */
-  const [members, setMembers] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [currentMember, setMember] = useState(null);
-  const [cart, setCart] = useState([]);
-  const [toast, setToast] = useState(null);
-  const [isLoading, setLoading] = useState(true);
-  const [isConfirming, setIsConfirming] = useState(false);
-  const isMounted = useRef(true);
+  const {
+    products,
+    isLoading: isProductsLoading,
+    adjustStock,
+    replaceProducts,
+    handleImageUpload,
+    toast: productToast,
+    clearToast: clearProductToast,
+  } = useProducts();
 
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const {
+    members,
+    currentMember,
+    setCurrentMember,
+    cart,
+    addProduct,
+    removeProduct,
+    totalPrice,
+    handleConfirm,
+    isConfirming,
+    isLoadingMembers,
+    toast: cartToast,
+    clearToast: clearCartToast,
+  } = useCart({ products, adjustStock, replaceProducts });
 
-  /* 🎵 効果音フック */
-  const { play } = useSoundEffects();
-
-  /* ---------- 初期データ取得 ---------- */
-  useEffect(() => {
-    (async () => {
-      try {
-        const [ms, ps] = await Promise.all([fetchMembers(), fetchProducts()]);
-        setMembers(ms);
-        setProducts(ps);
-      } catch (err) {
-        console.error(err);
-        setToast({ msg: "初期データの取得に失敗しました😢", type: "error" });
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  /* ---------- カート追加 ---------- */
-  /**
-   * @param {object} product - 追加する商品
-   * @param {boolean} playSound - 効果音を鳴らすか（デフォルト true）
-   */
-  const addProduct = useCallback(
-    (product, playSound = true) => {
-      if (playSound) play("addProduct"); // 🔑 ここを条件付きに！
-      setCart((c) => [...c, product]);
-      setProducts((ps) =>
-        ps.map((p) => (p.id === product.id ? { ...p, stock: p.stock - 1 } : p))
-      );
-      setToast({ msg: `${product.name} を追加しました😊`, type: "success" });
-    },
-    [play]
-  );
-
-  /* ---------- カート削除 ---------- */
-  const removeProduct = useCallback((index) => {
-    setCart((c) => {
-      const removed = c[index];
-      setProducts((ps) =>
-        ps.map((p) => (p.id === removed.id ? { ...p, stock: p.stock + 1 } : p))
-      );
-      return c.filter((_, i) => i !== index);
-    });
-  }, []);
-
-  /* ---------- 画像アップロード後の商品情報更新 ---------- */
-  const handleImageUpload = useCallback((updated) => {
-    setProducts((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
-    setToast({ msg: "画像を更新しました🖼️", type: "success" });
-  }, []);
-
-  /* ---------- 購入確定 ---------- */
-  const handleConfirm = async () => {
-    if (!currentMember) {
-      setToast({ msg: "名前を選択してください", type: "info" });
-      return;
-    }
-    if (cart.length === 0) {
-      setToast({ msg: "まず商品を追加してください", type: "info" });
-      return;
-    }
-    if (isConfirming) return; // 二重送信防止
-    try {
-      setIsConfirming(true);
-      const { members: ms, products: ps } = await postPurchase({
-        memberId: currentMember.id,
-        productIds: cart.map((p) => p.id),
-      });
-      play("confirm");
-      setMembers(ms);
-      setProducts(ps);
-      setCart([]);
-      setMember(null);
-      setToast({ msg: "購入が完了しました🎉", type: "success" });
-    } catch (err) {
-      console.error(err);
-      setToast({ msg: "購入処理に失敗しました😢", type: "error" });
-    } finally {
-      if (isMounted.current) {
-        setIsConfirming(false);
-      }
+  const toast = cartToast || productToast;
+  const clearToast = () => {
+    if (cartToast) {
+      clearCartToast();
+    } else {
+      clearProductToast();
     }
   };
 
-  /* ---------- バーコードスキャン ---------- */
-  const handleScan = useCallback(
-    (code) => {
-      const product = products.find((p) => p.barcode === code);
-      if (!product) {
-        play("scanError");
-        setToast({ msg: "登録されていない商品です😢", type: "error" });
-        return;
-      }
-      play("scanSuccess");           // ✅ 成功音だけ再生
-      addProduct(product, false);    // 🔕 追加音は鳴らさない
-    },
-    [products, addProduct, play]
-  );
-  useBarcodeScanner(handleScan);
-
   /* ---------- ローディング ---------- */
-  if (isLoading)
+  if (isProductsLoading || isLoadingMembers)
     return (
       <div className="h-screen flex items-center justify-center text-xl">
         読み込み中…
@@ -155,7 +68,7 @@ export default function Shop() {
           <NameSelector
             members={members}
             currentMember={currentMember}
-            setCurrentMember={setMember}
+            setCurrentMember={setCurrentMember}
           />
         </div>
 
@@ -167,6 +80,7 @@ export default function Shop() {
           />
           <CartList
             cart={cart}
+            total={totalPrice}
             onRemove={removeProduct}
             onConfirm={handleConfirm}
             isConfirming={isConfirming}
@@ -177,7 +91,7 @@ export default function Shop() {
           <Toast
             message={toast.msg}
             type={toast.type}
-            onClose={() => setToast(null)}
+            onClose={clearToast}
           />
         )}
       </div>

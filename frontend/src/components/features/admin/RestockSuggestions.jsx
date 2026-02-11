@@ -1,31 +1,11 @@
 // frontend/src/components/features/admin/RestockSuggestions.jsx
-import { useEffect, useState } from "react";
-import { fetchRestockSuggestions } from "../../../api/adminApi";
+import useAdmin from "../../../hooks/useAdmin";
 import ScrollContainer from "../../ui/ScrollContainer";
 
 export default function RestockSuggestions({ token }) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [items, setItems] = useState([]);
-  const [params, setParams] = useState({ days: 45, targetDays: 30, safetyDays: 10, minSold: 1 });
-
-  const fetchSuggestions = async () => {
-    try {
-      setLoading(true);
-      setError("");
-      const suggestions = await fetchRestockSuggestions(params, token);
-      setItems(suggestions);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSuggestions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const {
+    restock: { items, loading, error, params, setParams, refresh },
+  } = useAdmin({ token, mode: "restock" });
 
   return (
     <ScrollContainer
@@ -68,7 +48,7 @@ export default function RestockSuggestions({ token }) {
             />
           </div>
           <button
-            onClick={fetchSuggestions}
+            onClick={refresh}
             className="ml-auto px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500"
           >
             🔄 更新

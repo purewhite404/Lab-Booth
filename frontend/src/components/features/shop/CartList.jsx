@@ -1,8 +1,7 @@
 // frontend/src/components/features/shop/CartList.jsx
 import MarqueeText from "../../ui/MarqueeText";
 
-export default function CartList({ cart, onRemove, onConfirm, isConfirming }) {
-  const total = cart.reduce((sum, item) => sum + item.price, 0);
+export default function CartList({ cart, total, onRemove, onConfirm, isConfirming }) {
 
   return (
     <div
