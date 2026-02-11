@@ -5,10 +5,11 @@ import jwt from "jsonwebtoken";
 import db from "./db/init.js";
 import adminAuth from "./adminAuth.js";
 import parseOrderItems from "./parseOrderItems.js";
-import { nowJST, jstMinusDays } from "./utils/time.js";
 import { PurchaseDeduplicator } from "./utils/dedup.js";
 import { upload, uploadDir } from "./config/multer.js";
 import { replaceProductImage } from "./services/imageService.js";
+import { processPurchase } from "./services/purchaseService.js";
+import { getRestockSuggestions } from "./services/inventoryService.js";
 
 dotenv.config();
 const app = express();
@@ -66,74 +67,21 @@ app.get("/api/products", (_req, res) => {
 });
 
 /* ⭐ 購入確定エンドポイント ⭐ */
-app.post("/api/purchase", (req, res) => {
-  let dedupKey;
+app.post("/api/purchase", async (req, res) => {
   try {
     const { memberId, productIds } = req.body;
-    const ts = nowJST();
-
-    const getMember = db.prepare("SELECT name FROM members WHERE id = ?");
-    const getProduct = db.prepare("SELECT name FROM products WHERE id = ?");
-
-    const memberRow = getMember.get(memberId);
-    if (!memberRow)
-      return res.status(400).json({ error: "不正な memberId です" });
-
-    // 事前に productIds の妥当性を軽く検証（存在チェック）
-    if (!Array.isArray(productIds) || productIds.length === 0) {
-      return res.status(400).json({ error: "productIds が不正です" });
-    }
-    for (const pid of productIds) {
-      const prodRow = getProduct.get(pid);
-      if (!prodRow)
-        return res.status(400).json({ error: "不正な productId が含まれています" });
-    }
-
-    // 短時間の同一内容をブロック（id 昇順でキー化）
-    dedupKey = purchaseDedup.makeKey(memberId, productIds);
-    const now = Date.now();
-    if (purchaseDedup.isDuplicate(dedupKey, now)) {
-      return res
-        .status(409)
-        .json({ error: "同一内容の購入リクエストが短時間に連続しています" });
-    }
-    // 競合防止のため先に記録（失敗時は catch で解除）
-    purchaseDedup.mark(dedupKey, now);
-
-    const insertPurchase = db.prepare(`
-      INSERT INTO purchases
-        (member_id, member_name, product_id, product_name, timestamp)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    const updateStock = db.prepare(`
-      UPDATE products
-      SET stock = CASE WHEN stock > 0 THEN stock - 1 ELSE 0 END
-      WHERE id = ?
-    `);
-
-    db.transaction(() => {
-      productIds.forEach((pid) => {
-        const prodRow = getProduct.get(pid);
-        insertPurchase.run(
-          memberId,
-          memberRow.name,
-          pid,
-          prodRow.name,
-          ts // ← JST で書き込み
-        );
-        updateStock.run(pid);
-      });
-      db.prepare("UPDATE products SET stock = 0 WHERE stock < 0").run();
-    })();
-
-    res.json({
-      members: db.prepare("SELECT * FROM members").all(),
-      products: db.prepare("SELECT * FROM products").all(),
+    const result = await processPurchase({
+      db,
+      purchaseDedup,
+      memberId,
+      productIds,
     });
+    res.json(result);
   } catch (e) {
     console.error(e);
-    if (dedupKey) purchaseDedup.release(dedupKey); // 失敗時は解放して再試行可に
-    res.status(500).json({ error: "購入処理に失敗しました" });
+    const status = e.statusCode ?? 500;
+    const message = e.message ?? "購入処理に失敗しました";
+    res.status(status).json({ error: message });
   }
 });
 
@@ -171,94 +119,13 @@ app.use("/api/admin", adminAuth);
 /* ===== 次買うべき候補（在庫・購買頻度ベース） ===== */
 app.get("/api/admin/restock-suggestions", (req, res) => {
   try {
-    // パラメータ
-    const days = Number(req.query.days ?? 30);
-    const days7 = 7; // 7日間は固定で別指標
-    const limit = Math.min(Number(req.query.limit ?? 100), 500);
-    const targetDays = Number(req.query.targetDays ?? 14); // 何日分を確保するか
-    const safetyDays = Number(req.query.safetyDays ?? 3); // 安全在庫(日)
-    const minSold = Number(req.query.minSold ?? 1); // 候補に含める最低販売数
-    const includeZeroVelocityWhenOOS = String(req.query.includeOOS ?? "false") === "true"; // 在庫ゼロは販売実績なくても含める
-
-    const since7 = jstMinusDays(days7);
-    const sinceN = jstMinusDays(days);
-
-    // products と purchases を集計結合
-    const rows = db
-      .prepare(
-        `
-        SELECT
-          pr.id,
-          pr.name,
-          pr.barcode,
-          pr.price,
-          pr.stock,
-          SUM(CASE WHEN p.timestamp >= ? THEN 1 ELSE 0 END) AS sold_7d,
-          SUM(CASE WHEN p.timestamp >= ? THEN 1 ELSE 0 END) AS sold_nd,
-          COALESCE(MAX(p.timestamp), '') AS last_sold_at
-        FROM products pr
-        LEFT JOIN purchases p ON p.product_id = pr.id
-        GROUP BY pr.id
-        `
-      )
-      .all(since7, sinceN);
-
-    // JS側で優先度・推奨発注数を計算
-    const suggestions = rows
-      .map((r) => {
-        const sold7 = Number(r.sold_7d || 0);
-        const soldN = Number(r.sold_nd || 0);
-        const avg7d = sold7 / days7;      // 直近7日間の1日あたり販売数
-        const avgNd = soldN / Math.max(days, 1);       // 直近N日間の1日あたり販売数
-        const isTrending = avg7d > avgNd;
-        const stock = Number(r.stock || 0);
-        const isOOS = stock <= 0;
-        const velocity = isTrending ? avg7d : avgNd; // 1日あたり
-        const daysOfSupply = velocity > 0 ? stock / velocity : (isOOS ? 0 : 9999);
-        // 推奨数量 = (ターゲット日数 + 安全在庫日数) * 速度 - 現在庫
-        const targetQtyFloat = velocity * (targetDays + safetyDays) - stock;
-        let suggestedQty = Math.ceil(Math.max(0, targetQtyFloat));
-        if (isOOS && velocity === 0 && includeZeroVelocityWhenOOS) {
-          // 実績ゼロだが在庫ゼロのものは最小1個提案
-          suggestedQty = Math.max(suggestedQty, 1);
-        }
-
-        // 理由
-        let reason = "";
-        if (isOOS) reason = "在庫切れ";
-        else if (velocity > 0 && daysOfSupply < targetDays) reason = `在庫が${Math.ceil(daysOfSupply)}日分しかない`;
-        else if (isTrending) reason = "最近よく売れている";
-
-        return {
-          id: r.id,
-          name: r.name,
-          barcode: r.barcode,
-          price: r.price,
-          stock,
-          sold_7d: sold7,
-          sold_nd: soldN,
-          window_days: days,
-          velocity_per_day: Number(velocity.toFixed(3)),
-          days_of_supply: Number(daysOfSupply === 9999 ? 9999 : daysOfSupply.toFixed(1)),
-          last_sold_at: r.last_sold_at,
-          suggested_qty: suggestedQty,
-          reason,
-        };
-      })
-      .filter((r) => {
-        // フィルタ：販売数が一定以上、または在庫切れ（設定による）
-        if (r.suggested_qty <= 0) return false;
-        if (r.sold_nd >= minSold) return true;
-        if (includeZeroVelocityWhenOOS && r.stock <= 0) return true;
-        return false;
-      })
-      .sort((a, b) => b.suggested_qty - a.suggested_qty)
-      .slice(0, limit);
-
-    res.json({ suggestions, meta: { days, targetDays, safetyDays, minSold, limit } });
+    const result = getRestockSuggestions({ db, query: req.query });
+    res.json(result);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "候補の計算に失敗しました" });
+    const status = e.statusCode ?? 500;
+    const message = e.message ?? "候補の計算に失敗しました";
+    res.status(status).json({ error: message });
   }
 });
 
