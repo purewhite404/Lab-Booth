@@ -1,6 +1,7 @@
 // frontend/src/components/InvoiceGenerator.jsx
 import { useEffect, useMemo, useState } from "react";
 import { fetchMembers } from "../api";
+import ScrollContainer from "./ScrollContainer";
 
 const ADMIN_BASE = "/api/admin";
 
@@ -8,7 +9,7 @@ export default function InvoiceGenerator({ token }) {
   /* === 対象年月 === */
   const now = new Date();
   const [ym, setYm] = useState(
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    `${now.getFullYear()}-${String(now.getMonth()).padStart(2, "0")}`
   );
 
   /* === メンバー・清算額取得 === */
@@ -33,9 +34,9 @@ export default function InvoiceGenerator({ token }) {
           return {
             id: m.id,
             name: m.name,
-            carry: "",
+            // 調整(±): 繰り越しはプラス、前払いはマイナス
+            adjust: "",
             settlement: s ? s.settlement : 0,
-            advance: "",
           };
         })
       );
@@ -50,12 +51,51 @@ export default function InvoiceGenerator({ token }) {
       return cp;
     });
 
+  // Excel列のペースト対応（繰越/前払い(±) 列）
+  const handlePasteAdjust = (startIdx, e) => {
+    const text = e.clipboardData?.getData("text");
+    if (!text) return;
+    e.preventDefault();
+
+    // 全角→半角、通貨やカンマ除去、()でのマイナス対応
+    const toHalfWidth = (str) =>
+      str.replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/　/g, " ");
+    const normalizeNumber = (s) => {
+      if (s == null) return "";
+      let t = toHalfWidth(String(s)).trim();
+      if (!t) return "";
+      // 先頭の Unicode マイナス風文字を ASCII マイナスへ
+      t = t.replace(/^[−‐‑‒–—―－ー]/, "-");
+      // 通貨記号・カンマ・空白除去
+      t = t.replace(/[¥$,\s]/g, "").replace(/[円]/g, "");
+      // 先頭に+があれば消す
+      t = t.replace(/^\+/, "");
+      // 数値として解釈
+      const num = Number(t);
+      if (Number.isNaN(num)) return "";
+      return String(num);
+    };
+
+    const lines = text.split(/\r?\n/).filter((l, i, arr) => !(i === arr.length - 1 && l === ""));
+    // 複数行の貼り付け（1列目のみを使用）
+    setRows((rs) => {
+      const cp = [...rs];
+      for (let i = 0; i < lines.length && startIdx + i < cp.length; i++) {
+        const cell = lines[i].split("\t")[0];
+        cp[startIdx + i].adjust = normalizeNumber(cell);
+      }
+      return cp;
+    });
+  };
+
   /* === 計算 === */
   const toNum = (v) => (isNaN(Number(v)) ? 0 : Number(v));
   const computedRows = useMemo(
     () =>
       rows.map((r) => {
-        const bal = toNum(r.carry) + r.settlement - toNum(r.advance);
+        // 調整(±) + 清算分で当月請求額を算出
+        // 調整が負なら繰り越し、正なら前払いとして機能する
+        const bal = - toNum(r.adjust) + r.settlement;
         return {
           ...r,
           invoice: bal < 0 ? 0 : bal,
@@ -67,12 +107,12 @@ export default function InvoiceGenerator({ token }) {
 
   /* === CSV ダウンロード === */
   const downloadCSV = () => {
-    const [y, m] = ym.split("-");
+    const [y, mStr] = ym.split("-");
+    const m = parseInt(mStr, 10);  // remove leading zero
     const head = [
       "名前",
-      "繰り越し",
+      "繰越/前払い(±)",
       `${m}月清算分`,
-      "前払い",
       `${m}月請求額`,
       "次回前払い",
     ];
@@ -80,9 +120,8 @@ export default function InvoiceGenerator({ token }) {
       .map((r) =>
         [
           r.name,
-          r.carry || 0,
+          r.adjust || 0,
           r.settlement,
-          r.advance || 0,
           r.invoice,
           r.nextAdvance,
         ].join(",")
@@ -101,8 +140,9 @@ export default function InvoiceGenerator({ token }) {
 
   /* === PDF / 印刷 === */
   const printInvoice = () => {
-    const [y, m] = ym.split("-");
-    const today = new Date();
+  const [y, mStr] = ym.split("-");
+  const m = parseInt(mStr, 10);  // strip leading zero
+  const today = new Date();
     const todayStr = `${today.getFullYear()}/${
       today.getMonth() + 1
     }/${today.getDate()}`;
@@ -147,11 +187,13 @@ export default function InvoiceGenerator({ token }) {
             margin-top: 24px;
           }
           th, td {
-            padding: 10px 12px;
+            padding: 6px 8px;              /* 行の高さを抑えるために余白を縮小 */
+            font-size: 14px;             /* 文字サイズをわずかに縮小 */
             text-align: right;
             border-right: 1px solid var(--border);
             border-bottom: 1px solid var(--border);   /* ★ 横罫線を追加 */
           }
+          thead th { font-size: 14px; }
           th:last-child, td:last-child { border-right: none; }
           th:first-child, td:first-child { text-align: left; border-left: none; }
           thead { background: #F3F4F6; font-weight: 600; }
@@ -176,7 +218,7 @@ export default function InvoiceGenerator({ token }) {
           <thead>
             <tr>
               <th>名前</th>
-              <th>繰り越し</th>
+              <th>繰越</th>
               <th class="settlement">${m}月清算分</th>
               <th>前払い</th>
               <th class="invoice">${m}月請求額</th>
@@ -189,9 +231,9 @@ export default function InvoiceGenerator({ token }) {
                 (r) => `
               <tr>
                 <td>${r.name}</td>
-                <td>${r.carry || 0}</td>
+                <td>${(Number(r.adjust) < 0 ? Math.abs(Number(r.adjust)) : 0)}</td>
                 <td class="settlement">${r.settlement}</td>
-                <td>${r.advance || 0}</td>
+                <td>${(Number(r.adjust) > 0 ? Number(r.adjust) : 0)}</td>
                 <td class="invoice">${r.invoice}</td>
                 <td>${r.nextAdvance}</td>
               </tr>`
@@ -224,43 +266,42 @@ export default function InvoiceGenerator({ token }) {
   };
 
   /* === 画面側テーブル (略) === */
-  const [, m] = ym.split("-");
+  const [, mStr] = ym.split("-");
+  const m = parseInt(mStr, 10);  // strip leading zero for display
   return (
-    <div className="flex flex-col gap-6">
-      {/* 入力欄 & ボタン */}
-      <div className="flex flex-wrap items-end gap-4">
-        <label className="flex flex-col">
-          <span className="font-semibold mb-1">対象年月 ⏰</span>
-          <input
-            type="month"
-            value={ym}
-            onChange={(e) => setYm(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600"
-          />
-        </label>
-        <button
-          onClick={downloadCSV}
-          className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-bold"
-        >
-          📥 CSVダウンロード
-        </button>
-        <button
-          onClick={printInvoice}
-          className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-bold"
-        >
-          🖨️ 印刷 / PDF保存
-        </button>
-      </div>
-
-      {/* 画面プレビュー用テーブル */}
-      <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-        <table className="min-w-full border-collapse">
+    <ScrollContainer
+      header={
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex flex-col">
+            <span className="font-semibold mb-1">対象年月 ⏰</span>
+            <input
+              type="month"
+              value={ym}
+              onChange={(e) => setYm(e.target.value)}
+              className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-600"
+            />
+          </label>
+          <button
+            onClick={downloadCSV}
+            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-bold"
+          >
+            📥 CSVダウンロード
+          </button>
+          <button
+            onClick={printInvoice}
+            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-bold"
+          >
+            🖨️ 印刷 / PDF保存
+          </button>
+        </div>
+      }
+    >
+      <table className="min-w-full border-collapse">
           <thead className="sticky top-0 bg-gray-800">
             <tr>
               <th className="px-3 py-2 text-left">名前</th>
-              <th className="px-3 py-2">繰り越し</th>
+              <th className="px-3 py-2">繰越/前払い(±)</th>
               <th className="px-3 py-2">{m}月清算分</th>
-              <th className="px-3 py-2">前払い</th>
               <th className="px-3 py-2">{m}月請求額</th>
               <th className="px-3 py-2">次回前払い</th>
             </tr>
@@ -272,25 +313,15 @@ export default function InvoiceGenerator({ token }) {
                 <td className="px-3 py-1">
                   <input
                     type="text"
-                    value={r.carry}
-                    onChange={(e) => handleChange(idx, "carry", e.target.value)}
+                    value={r.adjust}
+                    onChange={(e) => handleChange(idx, "adjust", e.target.value)}
+                    onPaste={(e) => handlePasteAdjust(idx, e)}
                     className="w-full min-w-[4rem] bg-transparent border-b border-gray-600 text-right"
-                    placeholder="0"
+                    placeholder=""
                   />
                 </td>
                 <td className="px-3 py-1 text-right font-bold">
                   {r.settlement}
-                </td>
-                <td className="px-3 py-1">
-                  <input
-                    type="text"
-                    value={r.advance}
-                    onChange={(e) =>
-                      handleChange(idx, "advance", e.target.value)
-                    }
-                    className="w-full min-w-[4rem] bg-transparent border-b border-gray-600 text-right"
-                    placeholder="0"
-                  />
                 </td>
                 <td className="px-3 py-1 text-right font-bold bg-orange-600/20">
                   {r.invoice}
@@ -299,8 +330,7 @@ export default function InvoiceGenerator({ token }) {
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-    </div>
+      </table>
+    </ScrollContainer>
   );
 }
