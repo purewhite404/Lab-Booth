@@ -1,5 +1,6 @@
 // frontend/src/components/features/admin/RestockSuggestions.jsx
 import { useEffect, useState } from "react";
+import { fetchRestockSuggestions } from "../../../api/adminApi";
 import ScrollContainer from "../../ui/ScrollContainer";
 
 export default function RestockSuggestions({ token }) {
@@ -12,13 +13,8 @@ export default function RestockSuggestions({ token }) {
     try {
       setLoading(true);
       setError("");
-      const q = new URLSearchParams(params).toString();
-      const res = await fetch(`/api/admin/restock-suggestions?${q}` , {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "取得に失敗しました");
-      setItems(data.suggestions || []);
+      const suggestions = await fetchRestockSuggestions(params, token);
+      setItems(suggestions);
     } catch (e) {
       setError(e.message);
     } finally {

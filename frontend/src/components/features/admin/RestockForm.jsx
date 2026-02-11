@@ -1,7 +1,6 @@
 // frontend/src/components/features/admin/RestockForm.jsx
 import { forwardRef, useImperativeHandle, useState } from "react";
-
-const BASE = "/api/admin";
+import { importRestock } from "../../../api/adminApi";
 
 const RestockForm = forwardRef(({ token }, ref) => {
   const [text, setText] = useState("");
@@ -13,22 +12,14 @@ const RestockForm = forwardRef(({ token }, ref) => {
         alert("メール本文を貼り付けてください");
         return;
       }
-      const res = await fetch(`${BASE}/restock/import`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) {
-        const { error } = await res.json();
-        alert(`失敗: ${error}`);
-        return;
+      try {
+        const { imported } = await importRestock(text, token);
+        alert(`🎉 ${imported} 件を登録しました。自動リロードします`);
+        window.location.reload();
+      } catch (err) {
+        const message = err?.response?.data?.error || err?.message;
+        alert(`失敗: ${message || "不明なエラー"}`);
       }
-      const { imported } = await res.json();
-      alert(`🎉 ${imported} 件を登録しました。自動リロードします`);
-      window.location.reload();
     },
   }));
 

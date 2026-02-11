@@ -1,9 +1,8 @@
 // frontend/src/components/features/admin/InvoiceGenerator.jsx
 import { useEffect, useMemo, useState } from "react";
-import { fetchMembers } from "../../../api";
+import { fetchInvoiceSummary } from "../../../api/adminApi";
+import { fetchMembers } from "../../../api/shopApi";
 import ScrollContainer from "../../ui/ScrollContainer";
-
-const ADMIN_BASE = "/api/admin";
 
 export default function InvoiceGenerator({ token }) {
   /* === 対象年月 === */
@@ -21,25 +20,26 @@ export default function InvoiceGenerator({ token }) {
 
     (async () => {
       const [year, month] = ym.split("-").map(Number);
-      const members = await fetchMembers();
-      const res = await fetch(
-        `${ADMIN_BASE}/invoice-summary?year=${year}&month=${month}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const { rows: settlements } = await res.json();
+      try {
+        const members = await fetchMembers();
+        const settlements = await fetchInvoiceSummary(year, month, token);
 
-      setRows(
-        members.map((m) => {
-          const s = settlements.find((x) => x.member_id === m.id);
-          return {
-            id: m.id,
-            name: m.name,
-            // 調整(±): 繰り越しはプラス、前払いはマイナス
-            adjust: "",
-            settlement: s ? s.settlement : 0,
-          };
-        })
-      );
+        setRows(
+          members.map((m) => {
+            const s = settlements.find((x) => x.member_id === m.id);
+            return {
+              id: m.id,
+              name: m.name,
+              // 調整(±): 繰り越しはプラス、前払いはマイナス
+              adjust: "",
+              settlement: s ? s.settlement : 0,
+            };
+          })
+        );
+      } catch (err) {
+        console.error(err);
+        setRows([]);
+      }
     })();
   }, [ym, token]);
 

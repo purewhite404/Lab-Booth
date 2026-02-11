@@ -1,6 +1,6 @@
 // frontend/src/components/features/shop/ProductCard.jsx
 import { useRef, useState } from "react";
-import { uploadProductImage } from "../../../api";
+import { uploadProductImage } from "../../../api/shopApi";
 import MarqueeText from "../../ui/MarqueeText";
 
 export default function ProductCard({ product, onAdd, onImageUpload }) {

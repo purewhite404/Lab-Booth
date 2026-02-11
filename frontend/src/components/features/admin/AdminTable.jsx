@@ -7,8 +7,13 @@ import {
   useState,
 } from "react";
 import ScrollContainer from "../../ui/ScrollContainer";
-
-const BASE = "/api/admin";
+import {
+  createTableRow,
+  deleteTableRow,
+  fetchTableColumns,
+  fetchTableRows,
+  updateTableRow,
+} from "../../../api/adminApi";
 
 /* ★ JST タイムスタンプを返すユーティリティ */
 const jstNow = () => {
@@ -35,21 +40,15 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
   /* 列情報取得 */
   const fetchColumns = useCallback(async () => {
     if (!table) return;
-    const res = await fetch(`${BASE}/${table}/columns`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const { columns: fetchedColumns } = await res.json();
-    setColumns(fetchedColumns);
+    const fetchedColumns = await fetchTableColumns(table, token);
+    setColumns(fetchedColumns || []);
   }, [table, token]);
 
   /* データ取得 */
   const fetchRows = useCallback(
     async (ord = order) => {
       if (!table) return;
-      const res = await fetch(`${BASE}/${table}?order=${ord}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const { rows: fetchedRows } = await res.json();
+      const fetchedRows = await fetchTableRows(table, ord, token);
       setRows(fetchedRows.map(editableCopy));
       setDirty({});
       setDeleted(new Set());
@@ -110,36 +109,19 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
       /* 削除 */
       await Promise.all(
         Array.from(deleted).map((id) =>
-          fetch(`${BASE}/${table}/${id}`, {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${token}` },
-          })
+          deleteTableRow(table, id, token)
         )
       );
       /* 更新 */
       await Promise.all(
         Object.values(dirty).map((row) =>
-          fetch(`${BASE}/${table}/${row.id}`, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(row),
-          })
+          updateTableRow(table, row.id, row, token)
         )
       );
       /* 追加 */
       await Promise.all(
         newRows.map(({ __tempId, ...body }) =>
-          fetch(`${BASE}/${table}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(body),
-          })
+          createTableRow(table, body, token)
         )
       );
       alert("👌 反映しました！（自動リロードします）");

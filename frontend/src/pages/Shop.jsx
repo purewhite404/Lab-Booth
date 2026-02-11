@@ -1,6 +1,6 @@
 // frontend/src/pages/Shop.jsx
 import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchMembers, fetchProducts, postPurchase } from "../api";
+import { fetchMembers, fetchProducts, postPurchase } from "../api/shopApi";
 import NameSelector from "../components/features/shop/NameSelector";
 import ProductList from "../components/features/shop/ProductList";
 import CartList from "../components/features/shop/CartList";
