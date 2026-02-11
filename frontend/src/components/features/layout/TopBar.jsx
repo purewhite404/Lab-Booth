@@ -1,6 +1,6 @@
-// frontend/src/components/TopBar.jsx
+// frontend/src/components/features/layout/TopBar.jsx
 import { useContext, useState, useCallback } from "react";
-import { AuthContext } from "../contexts/AuthContext"; // ← 相対パス修正
+import { AuthContext } from "../../../contexts/AuthContext";
 
 export default function TopBar() {
   const { isLoggedIn, login, logout } = useContext(AuthContext);

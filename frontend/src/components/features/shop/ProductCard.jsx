@@ -1,6 +1,7 @@
+// frontend/src/components/features/shop/ProductCard.jsx
 import { useRef, useState } from "react";
-import { uploadProductImage } from "../api";
-import MarqueeText from "./MarqueeText";
+import { uploadProductImage } from "../../../api";
+import MarqueeText from "../../ui/MarqueeText";
 
 export default function ProductCard({ product, onAdd, onImageUpload }) {
   const fileRef = useRef(null);

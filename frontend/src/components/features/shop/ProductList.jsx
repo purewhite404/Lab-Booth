@@ -1,4 +1,4 @@
-// src/components/ProductList.jsx
+// frontend/src/components/features/shop/ProductList.jsx
 import { useState, useMemo } from "react";
 import ProductCard from "./ProductCard";
 
