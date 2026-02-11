@@ -3,45 +3,19 @@ import express from "express";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import db from "./db/init.js";
-import multer from "multer";
-import fs from "fs";
-import path from "path";
 import adminAuth from "./adminAuth.js";
 import parseOrderItems from "./parseOrderItems.js";
-import sharp from "sharp";
+import { nowJST, jstMinusDays } from "./utils/time.js";
+import { PurchaseDeduplicator } from "./utils/dedup.js";
+import { upload, uploadDir } from "./config/multer.js";
+import { replaceProductImage } from "./services/imageService.js";
 
 dotenv.config();
 const app = express();
 app.use(express.json());
 
 /* ===== 多重送信（短時間の同一データ）対策 ===== */
-const DUP_WINDOW_MS = Number(process.env.DEDUP_WINDOW_MS || 5000); // 既定5秒
-const recentPurchaseKeys = new Map(); // key -> timestamp(ms)
-function makePurchaseKey(memberId, productIds) {
-  const ids = Array.isArray(productIds)
-    ? [...productIds].map((n) => Number(n)).sort((a, b) => a - b)
-    : [];
-  return `${memberId}|${ids.join(",")}`;
-}
-// 簡易クリーンアップ（リーク防止）
-setInterval(() => {
-  const cutoff = Date.now() - DUP_WINDOW_MS;
-  for (const [k, ts] of recentPurchaseKeys) {
-    if (ts < cutoff) recentPurchaseKeys.delete(k);
-  }
-}, Math.max(DUP_WINDOW_MS, 2000)).unref?.();
-
-/* ===== 共通ユーティリティ ===== */
-function nowJST() {
-  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return jst.toISOString().slice(0, 19).replace("T", " ");
-}
-// JSTで現在から指定日数を引いたYYYY-MM-DD HH:mm:ssを返す
-function jstMinusDays(days) {
-  const ms = Date.now() + 9 * 60 * 60 * 1000 - days * 24 * 60 * 60 * 1000;
-  const d = new Date(ms);
-  return d.toISOString().slice(0, 19).replace("T", " ");
-}
+const purchaseDedup = new PurchaseDeduplicator();
 function adjustProductStock(productId, delta, newPrice = null) {
   if (!productId || isNaN(delta)) return;
   db.prepare("UPDATE products SET stock = stock + ? WHERE id = ?").run(
@@ -71,19 +45,6 @@ app.post("/api/login", (req, res) => {
 });
 
 /* ===== 画像アップロード設定 ===== */
-const uploadDir = path.resolve("uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-const storage = multer.diskStorage({
-  destination: uploadDir,
-  filename: (req, file, cb) =>
-    cb(
-      null,
-      `product_${req.params.id || "upload"}_${Date.now()}${path.extname(
-        file.originalname
-      )}`
-    ),
-});
-const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 app.use("/api/uploads", express.static(uploadDir));
 
 /* ───────── 一般利用 API ───────── */
@@ -129,16 +90,15 @@ app.post("/api/purchase", (req, res) => {
     }
 
     // 短時間の同一内容をブロック（id 昇順でキー化）
-    dedupKey = makePurchaseKey(memberId, productIds);
+    dedupKey = purchaseDedup.makeKey(memberId, productIds);
     const now = Date.now();
-    const last = recentPurchaseKeys.get(dedupKey);
-    if (last && now - last < DUP_WINDOW_MS) {
+    if (purchaseDedup.isDuplicate(dedupKey, now)) {
       return res
         .status(409)
         .json({ error: "同一内容の購入リクエストが短時間に連続しています" });
     }
     // 競合防止のため先に記録（失敗時は catch で解除）
-    recentPurchaseKeys.set(dedupKey, now);
+    purchaseDedup.mark(dedupKey, now);
 
     const insertPurchase = db.prepare(`
       INSERT INTO purchases
@@ -172,7 +132,7 @@ app.post("/api/purchase", (req, res) => {
     });
   } catch (e) {
     console.error(e);
-    if (dedupKey) recentPurchaseKeys.delete(dedupKey); // 失敗時は解放して再試行可に
+    if (dedupKey) purchaseDedup.release(dedupKey); // 失敗時は解放して再試行可に
     res.status(500).json({ error: "購入処理に失敗しました" });
   }
 });
@@ -182,42 +142,14 @@ app.post("/api/products/:id/image", upload.single("image"), async (req, res) => 
   try {
     if (!req.file) return res.status(400).json({ error: "画像がありません" });
     const id = Number(req.params.id);
-
-    /* 旧画像を削除 */
-    const cur = db.prepare("SELECT image FROM products WHERE id = ?").get(id);
-    if (cur && cur.image) {
-      const oldName = path.basename(cur.image);
-      const oldPath = path.join(uploadDir, oldName);
-      try {
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-      } catch (e) {
-        console.error("旧画像の削除に失敗:", e.message);
-      }
-    }
-
-    // 保存先ファイル名
-    const filename = `product_${id}_${Date.now()}.jpg`;
-    const outPath = path.join(uploadDir, filename);
-
-    // sharpでリサイズ・圧縮して保存
-    await sharp(req.file.path)
-      .resize({ width: 600, height: 600, fit: "inside" })
-      .jpeg({ quality: 70 })
-      .toFile(outPath);
-
-    // アップロードされた元ファイルを削除
-    fs.unlinkSync(req.file.path);
-
-    /* DB更新 */
-    const publicPath = `/api/uploads/${filename}`;
-    db.prepare("UPDATE products SET image = ? WHERE id = ?").run(
-      publicPath,
-      id
-    );
-
-    res.json({
-      product: db.prepare("SELECT * FROM products WHERE id = ?").get(id),
+    const product = await replaceProductImage({
+      db,
+      uploadDir,
+      productId: id,
+      tempPath: req.file.path,
     });
+
+    res.json({ product });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "画像アップロードに失敗しました" });
