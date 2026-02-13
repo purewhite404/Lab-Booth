@@ -4,8 +4,10 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useState,
 } from "react";
+import { TableVirtuoso } from "react-virtuoso";
 import ScrollContainer from "../../ui/ScrollContainer";
 import {
   createTableRow,
@@ -36,6 +38,14 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
   const [dirty, setDirty] = useState({});
   const [deleted, setDeleted] = useState(new Set());
   const [newRows, setNewRows] = useState([]);
+
+  const tableData = useMemo(
+    () => [
+      ...rows.map((row, idx) => ({ kind: "existing", row, idx })),
+      ...newRows.map((row, idx) => ({ kind: "new", row, idx })),
+    ],
+    [rows, newRows]
+  );
 
   /* 列情報取得 */
   const fetchColumns = useCallback(async () => {
@@ -152,6 +162,8 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
 
   return (
     <ScrollContainer
+      scrollable={false}
+      bodyClassName="min-h-0"
       header={
         <button
           onClick={() => setOrder(order === "asc" ? "desc" : "asc")}
@@ -169,8 +181,10 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
         </button>
       }
     >
-      <table className="min-w-full border-collapse">
-        <thead className="sticky top-0 bg-gray-800 z-10">
+      <TableVirtuoso
+        data={tableData}
+        style={{ height: "100%" }}
+        fixedHeaderContent={() => (
           <tr>
             {columns.map((c) => (
               <th key={c} className="px-3 py-2 text-left font-semibold">
@@ -179,44 +193,63 @@ const AdminTable = forwardRef(({ table, token }, ref) => {
             ))}
             <th className="px-3 py-2" />
           </tr>
-        </thead>
-        <tbody>
-          {/* 既存行 */}
-          {rows.map((row, idx) => {
-            const isDeleted = deleted.has(row.id);
+        )}
+        itemContent={(_, item) => {
+          if (item.kind === "new") {
             return (
-              <tr
-                key={row.id}
-                className={
-                  isDeleted
-                    ? "bg-red-900/40 line-through"
-                    : idx % 2
-                    ? "bg-gray-800/50"
-                    : ""
-                }
-              >
-                {renderCells(row, idx, false)}
-                <td className="px-3 py-1 text-center">
-                  <button
-                    onClick={() => toggleDelete(row.id)}
-                    className="text-red-400 hover:text-red-300"
-                  >
-                    {isDeleted ? "↩️" : "🗑️"}
-                  </button>
-                </td>
-              </tr>
+              <>
+                {renderCells(item.row, item.idx, true)}
+                <td />
+              </>
             );
-          })}
+          }
 
-          {/* 新規行 */}
-          {newRows.map((row, idx) => (
-            <tr key={row.__tempId} className="bg-emerald-900/30">
-              {renderCells(row, idx, true)}
-              <td />
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          const isDeleted = deleted.has(item.row.id);
+
+          return (
+            <>
+              {renderCells(item.row, item.idx, false)}
+              <td className="px-3 py-1 text-center">
+                <button
+                  onClick={() => toggleDelete(item.row.id)}
+                  className="text-red-400 hover:text-red-300"
+                >
+                  {isDeleted ? "↩️" : "🗑️"}
+                </button>
+              </td>
+            </>
+          );
+        }}
+        components={{
+          Table: (props) => (
+            <table {...props} className="min-w-full border-collapse" />
+          ),
+          TableHead: (props) => (
+            <thead {...props} className="bg-gray-800 z-10" />
+          ),
+          TableRow: (props) => {
+            const dataIndex = Number(
+              props["data-index"] ?? props["data-item-index"]
+            );
+            const item = tableData[dataIndex];
+
+            if (!item) return <tr {...props} />;
+
+            if (item.kind === "new") {
+              return <tr {...props} className="bg-emerald-900/30" />;
+            }
+
+            const isDeleted = deleted.has(item.row.id);
+            const rowClass = isDeleted
+              ? "bg-red-900/40 line-through"
+              : item.idx % 2
+              ? "bg-gray-800/50"
+              : "";
+
+            return <tr {...props} className={rowClass} />;
+          },
+        }}
+      />
     </ScrollContainer>
   );
 });

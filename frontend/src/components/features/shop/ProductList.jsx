@@ -1,6 +1,30 @@
 // frontend/src/components/features/shop/ProductList.jsx
-import { useState, useMemo } from "react";
+import { forwardRef, useMemo, useState } from "react";
+import { VirtuosoGrid } from "react-virtuoso";
 import ProductCard from "./ProductCard";
+
+const GridList = forwardRef(({ style, children, ...props }, ref) => (
+  <div
+    ref={ref}
+    style={style}
+    {...props}
+    className="grid gap-6 pr-1 mt-2 sm:grid-cols-2 md:grid-cols-3 lg:pr-4"
+  >
+    {children}
+  </div>
+));
+
+GridList.displayName = "GridList";
+
+const GridItem = ({ children, ...props }) => (
+  <div {...props}>{children}</div>
+);
+
+const EmptyPlaceholder = () => (
+  <p className="col-span-full text-center text-gray-400">
+    商品が見つかりませんでした。
+  </p>
+);
 
 export default function ProductList({ products, onAdd, onImageUpload }) {
   const [query, setQuery] = useState("");
@@ -49,27 +73,26 @@ export default function ProductList({ products, onAdd, onImageUpload }) {
         </div>
       </div>
 
-      {/* ── 商品グリッド ───────────────────── */}
+      {/* ── 商品グリッド（仮想スクロール） ───────────────────── */}
       <div className="flex-1 min-h-0">
-        <div
-          className="grid gap-6 pr-1 mt-2 sm:grid-cols-2 md:grid-cols-3 lg:pr-4
-                     overflow-y-auto max-h-[31.5rem] scroll-smooth"
-        >
-          {filtered.map((p) => (
+        <VirtuosoGrid
+          data={filtered}
+          style={{ height: "min(31.5rem, calc(100vh - 14rem))" }}
+          className="scroll-smooth"
+          components={{
+            List: GridList,
+            Item: GridItem,
+            EmptyPlaceholder,
+          }}
+          itemContent={(_, product) => (
             <ProductCard
-              key={p.id}
-              product={p}
+              key={product.id}
+              product={product}
               onAdd={onAdd}
               onImageUpload={onImageUpload}
             />
-          ))}
-
-          {filtered.length === 0 && (
-            <p className="col-span-full text-center text-gray-400">
-              商品が見つかりませんでした。
-            </p>
           )}
-        </div>
+        />
       </div>
     </div>
   );
