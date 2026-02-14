@@ -15,4 +15,4 @@ COPY .env ./
 
 # 5) ポート公開 & 起動
 EXPOSE 3001
-CMD ["node", "src/index.js"]
+CMD ["node", "src/server.js"]

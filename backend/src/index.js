@@ -3,45 +3,20 @@ import express from "express";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import db from "./db/init.js";
-import multer from "multer";
-import fs from "fs";
-import path from "path";
 import adminAuth from "./adminAuth.js";
 import parseOrderItems from "./parseOrderItems.js";
-import sharp from "sharp";
+import { PurchaseDeduplicator } from "./utils/dedup.js";
+import { upload, uploadDir } from "./config/multer.js";
+import { replaceProductImage } from "./services/imageService.js";
+import { processPurchase } from "./services/purchaseService.js";
+import { getRestockSuggestions } from "./services/inventoryService.js";
 
 dotenv.config();
 const app = express();
 app.use(express.json());
 
 /* ===== 多重送信（短時間の同一データ）対策 ===== */
-const DUP_WINDOW_MS = Number(process.env.DEDUP_WINDOW_MS || 5000); // 既定5秒
-const recentPurchaseKeys = new Map(); // key -> timestamp(ms)
-function makePurchaseKey(memberId, productIds) {
-  const ids = Array.isArray(productIds)
-    ? [...productIds].map((n) => Number(n)).sort((a, b) => a - b)
-    : [];
-  return `${memberId}|${ids.join(",")}`;
-}
-// 簡易クリーンアップ（リーク防止）
-setInterval(() => {
-  const cutoff = Date.now() - DUP_WINDOW_MS;
-  for (const [k, ts] of recentPurchaseKeys) {
-    if (ts < cutoff) recentPurchaseKeys.delete(k);
-  }
-}, Math.max(DUP_WINDOW_MS, 2000)).unref?.();
-
-/* ===== 共通ユーティリティ ===== */
-function nowJST() {
-  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return jst.toISOString().slice(0, 19).replace("T", " ");
-}
-// JSTで現在から指定日数を引いたYYYY-MM-DD HH:mm:ssを返す
-function jstMinusDays(days) {
-  const ms = Date.now() + 9 * 60 * 60 * 1000 - days * 24 * 60 * 60 * 1000;
-  const d = new Date(ms);
-  return d.toISOString().slice(0, 19).replace("T", " ");
-}
+const purchaseDedup = new PurchaseDeduplicator();
 function adjustProductStock(productId, delta, newPrice = null) {
   if (!productId || isNaN(delta)) return;
   db.prepare("UPDATE products SET stock = stock + ? WHERE id = ?").run(
@@ -71,19 +46,6 @@ app.post("/api/login", (req, res) => {
 });
 
 /* ===== 画像アップロード設定 ===== */
-const uploadDir = path.resolve("uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-const storage = multer.diskStorage({
-  destination: uploadDir,
-  filename: (req, file, cb) =>
-    cb(
-      null,
-      `product_${req.params.id || "upload"}_${Date.now()}${path.extname(
-        file.originalname
-      )}`
-    ),
-});
-const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 app.use("/api/uploads", express.static(uploadDir));
 
 /* ───────── 一般利用 API ───────── */
@@ -105,75 +67,21 @@ app.get("/api/products", (_req, res) => {
 });
 
 /* ⭐ 購入確定エンドポイント ⭐ */
-app.post("/api/purchase", (req, res) => {
-  let dedupKey;
+app.post("/api/purchase", async (req, res) => {
   try {
     const { memberId, productIds } = req.body;
-    const ts = nowJST();
-
-    const getMember = db.prepare("SELECT name FROM members WHERE id = ?");
-    const getProduct = db.prepare("SELECT name FROM products WHERE id = ?");
-
-    const memberRow = getMember.get(memberId);
-    if (!memberRow)
-      return res.status(400).json({ error: "不正な memberId です" });
-
-    // 事前に productIds の妥当性を軽く検証（存在チェック）
-    if (!Array.isArray(productIds) || productIds.length === 0) {
-      return res.status(400).json({ error: "productIds が不正です" });
-    }
-    for (const pid of productIds) {
-      const prodRow = getProduct.get(pid);
-      if (!prodRow)
-        return res.status(400).json({ error: "不正な productId が含まれています" });
-    }
-
-    // 短時間の同一内容をブロック（id 昇順でキー化）
-    dedupKey = makePurchaseKey(memberId, productIds);
-    const now = Date.now();
-    const last = recentPurchaseKeys.get(dedupKey);
-    if (last && now - last < DUP_WINDOW_MS) {
-      return res
-        .status(409)
-        .json({ error: "同一内容の購入リクエストが短時間に連続しています" });
-    }
-    // 競合防止のため先に記録（失敗時は catch で解除）
-    recentPurchaseKeys.set(dedupKey, now);
-
-    const insertPurchase = db.prepare(`
-      INSERT INTO purchases
-        (member_id, member_name, product_id, product_name, timestamp)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    const updateStock = db.prepare(`
-      UPDATE products
-      SET stock = CASE WHEN stock > 0 THEN stock - 1 ELSE 0 END
-      WHERE id = ?
-    `);
-
-    db.transaction(() => {
-      productIds.forEach((pid) => {
-        const prodRow = getProduct.get(pid);
-        insertPurchase.run(
-          memberId,
-          memberRow.name,
-          pid,
-          prodRow.name,
-          ts // ← JST で書き込み
-        );
-        updateStock.run(pid);
-      });
-      db.prepare("UPDATE products SET stock = 0 WHERE stock < 0").run();
-    })();
-
-    res.json({
-      members: db.prepare("SELECT * FROM members").all(),
-      products: db.prepare("SELECT * FROM products").all(),
+    const result = await processPurchase({
+      db,
+      purchaseDedup,
+      memberId,
+      productIds,
     });
+    res.json(result);
   } catch (e) {
     console.error(e);
-    if (dedupKey) recentPurchaseKeys.delete(dedupKey); // 失敗時は解放して再試行可に
-    res.status(500).json({ error: "購入処理に失敗しました" });
+    const status = e.statusCode ?? 500;
+    const message = e.message ?? "購入処理に失敗しました";
+    res.status(status).json({ error: message });
   }
 });
 
@@ -182,42 +90,14 @@ app.post("/api/products/:id/image", upload.single("image"), async (req, res) => 
   try {
     if (!req.file) return res.status(400).json({ error: "画像がありません" });
     const id = Number(req.params.id);
-
-    /* 旧画像を削除 */
-    const cur = db.prepare("SELECT image FROM products WHERE id = ?").get(id);
-    if (cur && cur.image) {
-      const oldName = path.basename(cur.image);
-      const oldPath = path.join(uploadDir, oldName);
-      try {
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-      } catch (e) {
-        console.error("旧画像の削除に失敗:", e.message);
-      }
-    }
-
-    // 保存先ファイル名
-    const filename = `product_${id}_${Date.now()}.jpg`;
-    const outPath = path.join(uploadDir, filename);
-
-    // sharpでリサイズ・圧縮して保存
-    await sharp(req.file.path)
-      .resize({ width: 600, height: 600, fit: "inside" })
-      .jpeg({ quality: 70 })
-      .toFile(outPath);
-
-    // アップロードされた元ファイルを削除
-    fs.unlinkSync(req.file.path);
-
-    /* DB更新 */
-    const publicPath = `/api/uploads/${filename}`;
-    db.prepare("UPDATE products SET image = ? WHERE id = ?").run(
-      publicPath,
-      id
-    );
-
-    res.json({
-      product: db.prepare("SELECT * FROM products WHERE id = ?").get(id),
+    const product = await replaceProductImage({
+      db,
+      uploadDir,
+      productId: id,
+      tempPath: req.file.path,
     });
+
+    res.json({ product });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "画像アップロードに失敗しました" });
@@ -239,94 +119,13 @@ app.use("/api/admin", adminAuth);
 /* ===== 次買うべき候補（在庫・購買頻度ベース） ===== */
 app.get("/api/admin/restock-suggestions", (req, res) => {
   try {
-    // パラメータ
-    const days = Number(req.query.days ?? 30);
-    const days7 = 7; // 7日間は固定で別指標
-    const limit = Math.min(Number(req.query.limit ?? 100), 500);
-    const targetDays = Number(req.query.targetDays ?? 14); // 何日分を確保するか
-    const safetyDays = Number(req.query.safetyDays ?? 3); // 安全在庫(日)
-    const minSold = Number(req.query.minSold ?? 1); // 候補に含める最低販売数
-    const includeZeroVelocityWhenOOS = String(req.query.includeOOS ?? "false") === "true"; // 在庫ゼロは販売実績なくても含める
-
-    const since7 = jstMinusDays(days7);
-    const sinceN = jstMinusDays(days);
-
-    // products と purchases を集計結合
-    const rows = db
-      .prepare(
-        `
-        SELECT
-          pr.id,
-          pr.name,
-          pr.barcode,
-          pr.price,
-          pr.stock,
-          SUM(CASE WHEN p.timestamp >= ? THEN 1 ELSE 0 END) AS sold_7d,
-          SUM(CASE WHEN p.timestamp >= ? THEN 1 ELSE 0 END) AS sold_nd,
-          COALESCE(MAX(p.timestamp), '') AS last_sold_at
-        FROM products pr
-        LEFT JOIN purchases p ON p.product_id = pr.id
-        GROUP BY pr.id
-        `
-      )
-      .all(since7, sinceN);
-
-    // JS側で優先度・推奨発注数を計算
-    const suggestions = rows
-      .map((r) => {
-        const sold7 = Number(r.sold_7d || 0);
-        const soldN = Number(r.sold_nd || 0);
-        const avg7d = sold7 / days7;      // 直近7日間の1日あたり販売数
-        const avgNd = soldN / Math.max(days, 1);       // 直近N日間の1日あたり販売数
-        const isTrending = avg7d > avgNd;
-        const stock = Number(r.stock || 0);
-        const isOOS = stock <= 0;
-        const velocity = isTrending ? avg7d : avgNd; // 1日あたり
-        const daysOfSupply = velocity > 0 ? stock / velocity : (isOOS ? 0 : 9999);
-        // 推奨数量 = (ターゲット日数 + 安全在庫日数) * 速度 - 現在庫
-        const targetQtyFloat = velocity * (targetDays + safetyDays) - stock;
-        let suggestedQty = Math.ceil(Math.max(0, targetQtyFloat));
-        if (isOOS && velocity === 0 && includeZeroVelocityWhenOOS) {
-          // 実績ゼロだが在庫ゼロのものは最小1個提案
-          suggestedQty = Math.max(suggestedQty, 1);
-        }
-
-        // 理由
-        let reason = "";
-        if (isOOS) reason = "在庫切れ";
-        else if (velocity > 0 && daysOfSupply < targetDays) reason = `在庫が${Math.ceil(daysOfSupply)}日分しかない`;
-        else if (isTrending) reason = "最近よく売れている";
-
-        return {
-          id: r.id,
-          name: r.name,
-          barcode: r.barcode,
-          price: r.price,
-          stock,
-          sold_7d: sold7,
-          sold_nd: soldN,
-          window_days: days,
-          velocity_per_day: Number(velocity.toFixed(3)),
-          days_of_supply: Number(daysOfSupply === 9999 ? 9999 : daysOfSupply.toFixed(1)),
-          last_sold_at: r.last_sold_at,
-          suggested_qty: suggestedQty,
-          reason,
-        };
-      })
-      .filter((r) => {
-        // フィルタ：販売数が一定以上、または在庫切れ（設定による）
-        if (r.suggested_qty <= 0) return false;
-        if (r.sold_nd >= minSold) return true;
-        if (includeZeroVelocityWhenOOS && r.stock <= 0) return true;
-        return false;
-      })
-      .sort((a, b) => b.suggested_qty - a.suggested_qty)
-      .slice(0, limit);
-
-    res.json({ suggestions, meta: { days, targetDays, safetyDays, minSold, limit } });
+    const result = getRestockSuggestions({ db, query: req.query });
+    res.json(result);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "候補の計算に失敗しました" });
+    const status = e.statusCode ?? 500;
+    const message = e.message ?? "候補の計算に失敗しました";
+    res.status(status).json({ error: message });
   }
 });
 

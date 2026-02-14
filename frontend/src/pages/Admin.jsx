@@ -1,11 +1,11 @@
 // frontend/src/pages/Admin.jsx
 import { useRef, useState, useContext } from "react";
 import { AuthContext } from "../contexts/AuthContext";
-import TopBar from "../components/TopBar";
-import AdminTable from "../components/AdminTable";
-import RestockForm from "../components/RestockForm";
-import InvoiceGenerator from "../components/InvoiceGenerator";
-import RestockSuggestions from "../components/RestockSuggestions";
+import TopBar from "../components/features/layout/TopBar";
+import AdminTable from "../components/features/admin/AdminTable";
+import RestockForm from "../components/features/admin/RestockForm";
+import InvoiceGenerator from "../components/features/admin/InvoiceGenerator";
+import RestockSuggestions from "../components/features/admin/RestockSuggestions";
 
 export default function Admin() {
   const { token, isLoggedIn } = useContext(AuthContext);

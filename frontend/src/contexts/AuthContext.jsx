@@ -1,4 +1,5 @@
 import { createContext, useState, useCallback } from "react";
+import { login as loginRequest } from "../api/authApi";
 
 export const AuthContext = createContext();
 
@@ -7,15 +8,9 @@ export default function AuthProvider({ children }) {
 
   /* --- ログイン --- */
   const login = useCallback(async (password) => {
-    const res = await fetch("/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (!res.ok) throw new Error("login failed");
-    const { token } = await res.json();
-    setToken(token);
-    localStorage.setItem("token", token);
+    const nextToken = await loginRequest(password);
+    setToken(nextToken);
+    localStorage.setItem("token", nextToken);
   }, []);
 
   /* --- ログアウト --- */
